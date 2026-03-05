@@ -3,6 +3,7 @@ import { Card, Title, Text, Badge, Select, SelectItem, Metric, TextInput } from 
 import api from '../utils/api';
 import { formatNumber, formatTimeAgo, formatPrice } from '../utils/formatters';
 import { ExternalLinkIcon, ArrowRightIcon, ArrowLeftIcon, ChevronDownIcon, ChevronRightIcon, SearchIcon } from 'lucide-react';
+import GmgnLink from '../components/common/GmgnLink';
 
 const parseDate = (value) => {
   if (value === undefined || value === null || value === '') return null;
@@ -432,6 +433,7 @@ const Trades = () => {
                                     <span className="text-sm font-normal text-gray-500">({group.token_name})</span>
                                   )}
                                   <span className="text-xs text-gray-500 truncate max-w-[200px]">{group.token_address}</span>
+                                  <GmgnLink address={group.token_address} />
                                 </div>
                                 <div className="flex flex-wrap items-center gap-4 text-xs text-gray-600">
                                   <span>买入: {formatNumber(group.totalBuyBnb, 4)} BNB</span>
@@ -472,6 +474,7 @@ const Trades = () => {
                                     <span className="text-xs text-gray-400 font-mono truncate max-w-[100px]" title={trade.token_address}>
                                       {trade.token_address}
                                     </span>
+                                    <GmgnLink address={trade.token_address} />
                                   </div>
                                 </td>
                                 <td className="py-3 px-4">

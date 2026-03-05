@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Card, Title, Text, Select, SelectItem, TextInput } from '@tremor/react';
-import { SearchIcon, EyeIcon, ArrowRightIcon, ArrowLeftIcon, CopyIcon, CheckIcon } from 'lucide-react';
+import { SearchIcon, EyeIcon, ArrowRightIcon, ArrowLeftIcon, CopyIcon, CheckIcon, ExternalLinkIcon } from 'lucide-react';
 import api from '../utils/api';
 import DiscoveryDrawer from '../components/common/DiscoveryDrawer';
 import { formatDate } from '../utils/formatters';
@@ -167,6 +167,19 @@ const CopyButton = ({ text }) => {
   );
 };
 
+const GmgnLink = ({ address }) => (
+  <a
+    href={`https://gmgn.ai/bsc/token/${address}`}
+    target="_blank"
+    rel="noopener noreferrer"
+    className="ml-1 p-0.5 text-gray-400 hover:text-indigo-500 rounded transition-colors"
+    title="在 GMGN.ai 查看"
+    onClick={(e) => e.stopPropagation()}
+  >
+    <ExternalLinkIcon className="w-3 h-3" />
+  </a>
+);
+
 const Discoveries = () => {
   const [discoveries, setDiscoveries] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -286,6 +299,7 @@ const Discoveries = () => {
                                 {item.token_address}
                               </span>
                               <CopyButton text={item.token_address} />
+                              <GmgnLink address={item.token_address} />
                             </div>
                           </div>
                         </td>
