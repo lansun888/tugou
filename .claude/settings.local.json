@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(.venv/Scripts/python.exe:*)",
+      "Bash(netstat:*)",
+      "Bash(tasklist:*)",
+      "Bash(PYTHONPATH=/d/workSpace/tugou .venv/Scripts/python.exe:*)",
+      "Bash(curl:*)",
+      "Bash(taskkill:*)",
+      "Bash(cmd:*)",
+      "WebSearch",
+      "WebFetch(domain:docs.bitquery.io)",
+      "WebFetch(domain:bscscan.com)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:www.emlahieu.blog)",
+      "WebFetch(domain:medium.com)",
+      "WebFetch(domain:four-meme.gitbook.io)"
+    ]
+  }
+}

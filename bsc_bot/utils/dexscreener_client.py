@@ -1,0 +1,83 @@
+import aiohttp
+import asyncio
+
+DEXSCREENER_API = "https://api.dexscreener.com"
+
+
+def _parse_pair(pair: dict) -> dict:
+    """将 DexScreener 原始 pair 对象解析为统一格式（与 get_token_data 返回格式一致）"""
+    vol = pair.get('volume') or {}
+    change = pair.get('priceChange') or {}
+    liq = pair.get('liquidity') or {}
+    txns_m5 = ((pair.get('txns') or {}).get('m5') or {})
+    return {
+        'price_usd': float(pair.get('priceUsd') or 0),
+        'price_bnb': float(pair.get('priceNative') or 0),
+        'liquidity_usd': float(liq.get('usd') or 0),
+        'liquidity_bnb': float(liq.get('quote') or 0),
+        'market_cap': float(pair.get('marketCap') or 0),
+        'fdv': float(pair.get('fdv') or 0),
+        'volume_24h': float(vol.get('h24') or 0),
+        'price_change_5m': float(change.get('m5') or 0),
+        'price_change_1h': float(change.get('h1') or 0),
+        'pair_address': pair.get('pairAddress'),
+        'dex_id': pair.get('dexId'),
+        'txns_5m_buys': int(txns_m5.get('buys') or 0),
+        'txns_5m_sells': int(txns_m5.get('sells') or 0),
+    }
+
+
+async def get_token_data(token_address: str) -> dict:
+    """
+    通过代币地址获取完整市场数据
+    接口：GET /token-pairs/v1/bsc/{tokenAddress}
+    返回流动性最大的交易对数据
+    """
+    url = f"{DEXSCREENER_API}/token-pairs/v1/bsc/{token_address}"
+    try:
+        async with aiohttp.ClientSession(trust_env=True) as session:
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=5)) as resp:
+                pairs = await resp.json()
+                if not pairs:
+                    return None
+                best_pair = max(pairs, key=lambda x: (x.get('liquidity') or {}).get('usd', 0))
+                return _parse_pair(best_pair)
+    except Exception as e:
+        print(f"get_token_data failed: {e}")
+        return None
+
+
+async def get_batch_prices(token_addresses: list) -> dict:
+    """
+    批量查询多个代币价格（最多30个）
+    接口：GET /tokens/v1/bsc/{address1},{address2},...
+    返回格式与 get_token_data 一致（已解析）
+    """
+    if not token_addresses:
+        return {}
+
+    results = {}
+    chunks = [token_addresses[i:i+30] for i in range(0, len(token_addresses), 30)]
+
+    for chunk in chunks:
+        addresses = ','.join(chunk)
+        url = f"{DEXSCREENER_API}/tokens/v1/bsc/{addresses}"
+        try:
+            async with aiohttp.ClientSession(trust_env=True) as session:
+                async with session.get(url, timeout=aiohttp.ClientTimeout(total=8)) as resp:
+                    pairs_list = await resp.json()
+                    for pair in pairs_list:
+                        token_addr = (pair.get('baseToken') or {}).get('address', '').lower()
+                        if not token_addr:
+                            continue
+                        parsed = _parse_pair(pair)
+                        if token_addr not in results:
+                            results[token_addr] = parsed
+                        else:
+                            # 保留流动性更大的那个
+                            if parsed['liquidity_usd'] > results[token_addr]['liquidity_usd']:
+                                results[token_addr] = parsed
+        except Exception as e:
+            print(f"批量查询失败: {e}")
+
+    return results
