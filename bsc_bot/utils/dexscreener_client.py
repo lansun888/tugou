@@ -1,5 +1,6 @@
 import aiohttp
 import asyncio
+from .http_client import fetch_with_proxy
 
 DEXSCREENER_API = "https://api.dexscreener.com"
 
@@ -35,13 +36,23 @@ async def get_token_data(token_address: str) -> dict:
     """
     url = f"{DEXSCREENER_API}/token-pairs/v1/bsc/{token_address}"
     try:
-        async with aiohttp.ClientSession(trust_env=True) as session:
-            async with session.get(url, timeout=aiohttp.ClientTimeout(total=5)) as resp:
-                pairs = await resp.json()
-                if not pairs:
-                    return None
-                best_pair = max(pairs, key=lambda x: (x.get('liquidity') or {}).get('usd', 0))
-                return _parse_pair(best_pair)
+        pairs = await fetch_with_proxy(url, timeout=5)
+        if not pairs:
+            return None
+        
+        if isinstance(pairs, list):
+            pair_list = pairs
+        elif isinstance(pairs, dict):
+            # DexScreener sometimes wraps in schemaVersion, pairs key
+            pair_list = pairs.get('pairs', [])
+        else:
+            return None
+            
+        if not pair_list:
+            return None
+            
+        best_pair = max(pair_list, key=lambda x: (x.get('liquidity') or {}).get('usd', 0))
+        return _parse_pair(best_pair)
     except Exception as e:
         print(f"get_token_data failed: {e}")
         return None
@@ -63,20 +74,25 @@ async def get_batch_prices(token_addresses: list) -> dict:
         addresses = ','.join(chunk)
         url = f"{DEXSCREENER_API}/tokens/v1/bsc/{addresses}"
         try:
-            async with aiohttp.ClientSession(trust_env=True) as session:
-                async with session.get(url, timeout=aiohttp.ClientTimeout(total=8)) as resp:
-                    pairs_list = await resp.json()
-                    for pair in pairs_list:
-                        token_addr = (pair.get('baseToken') or {}).get('address', '').lower()
-                        if not token_addr:
-                            continue
-                        parsed = _parse_pair(pair)
-                        if token_addr not in results:
-                            results[token_addr] = parsed
-                        else:
-                            # 保留流动性更大的那个
-                            if parsed['liquidity_usd'] > results[token_addr]['liquidity_usd']:
-                                results[token_addr] = parsed
+            pairs_list = await fetch_with_proxy(url, timeout=8)
+            if not pairs_list:
+                continue
+                
+            # DexScreener might return list or dict with pairs
+            if isinstance(pairs_list, dict):
+                pairs_list = pairs_list.get('pairs', [])
+                
+            for pair in pairs_list:
+                token_addr = (pair.get('baseToken') or {}).get('address', '').lower()
+                if not token_addr:
+                    continue
+                parsed = _parse_pair(pair)
+                if token_addr not in results:
+                    results[token_addr] = parsed
+                else:
+                    # 保留流动性更大的那个
+                    if parsed['liquidity_usd'] > results[token_addr]['liquidity_usd']:
+                        results[token_addr] = parsed
         except Exception as e:
             print(f"批量查询失败: {e}")
 

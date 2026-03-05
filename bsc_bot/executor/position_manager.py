@@ -11,7 +11,7 @@ from loguru import logger
 from datetime import datetime, timedelta
 import os
 from dotenv import load_dotenv
-from web3 import AsyncWeb3
+from web3 import AsyncWeb3, Web3
 from bsc_bot.monitor.abis import PANCAKESWAP_PAIR_ABI, ERC20_ABI, PANCAKESWAP_V2_FACTORY_ABI
 
 load_dotenv()
@@ -24,6 +24,7 @@ class Position:
     buy_amount_bnb: float
     token_amount: float
     buy_time: float  # timestamp
+    pair_address: str = "" # Add pair_address
     current_price: float = 0.0
     current_value_bnb: float = 0.0
     pnl_percentage: float = 0.0
@@ -73,6 +74,8 @@ class PositionManager:
         self.running = False
         self._tg_session: aiohttp.ClientSession = None  # 复用Telegram通知session
         self._pair_address_cache: Dict[str, str] = {}  # token_address -> pair_address 缓存
+        self._pair_token0_cache: Dict[str, str] = {} # pair_address -> token0 缓存
+        self._token_decimals_cache: Dict[str, int] = {} # token_address -> decimals 缓存
         
         # Lock for duplicate sell prevention (in-memory)
         self.selling_tokens = set()
@@ -80,6 +83,10 @@ class PositionManager:
         # Track pending stop losses for "N consecutive confirmations"
         # Format: {token_address: {"count": int, "first_trigger_time": float}}
         self.pending_stop_loss = {}
+        
+        # Track active event monitoring tasks
+        # Format: {token_address: asyncio.Task}
+        self.watch_tasks = {}
         
         # 每日统计
         self.daily_stats = {
@@ -113,6 +120,7 @@ class PositionManager:
                     sold_portions TEXT,
                     status TEXT,
                     buy_gas_price INTEGER DEFAULT 0,
+                    pair_address TEXT DEFAULT '',
                     current_price REAL DEFAULT 0.0,
                     pnl_percentage REAL DEFAULT 0.0,
                     volume_24h REAL DEFAULT 0.0,
@@ -141,6 +149,8 @@ class PositionManager:
                     await db.execute(f"ALTER TABLE {self.positions_table} ADD COLUMN txns_5m_sells INTEGER DEFAULT 0")
                 if "source" not in columns:
                     await db.execute(f"ALTER TABLE {self.positions_table} ADD COLUMN source TEXT DEFAULT 'init'")
+                if "pair_address" not in columns:
+                    await db.execute(f"ALTER TABLE {self.positions_table} ADD COLUMN pair_address TEXT DEFAULT ''")
             except Exception as e:
                 logger.warning(f"Migration check failed, running legacy migration: {e}")
                 try:
@@ -155,6 +165,9 @@ class PositionManager:
                     if "pnl_percentage" not in columns:
                         logger.info(f"Migrating {self.positions_table} table: adding pnl_percentage")
                         await db.execute(f"ALTER TABLE {self.positions_table} ADD COLUMN pnl_percentage REAL DEFAULT 0.0")
+                    if "pair_address" not in columns:
+                        logger.info(f"Migrating {self.positions_table} table: adding pair_address")
+                        await db.execute(f"ALTER TABLE {self.positions_table} ADD COLUMN pair_address TEXT DEFAULT ''")
                 except Exception as e2:
                     logger.warning(f"Legacy migration also failed: {e2}")
                 
@@ -167,13 +180,6 @@ class PositionManager:
             async with aiosqlite.connect(self.db_path) as db:
                 db.row_factory = aiosqlite.Row
                 
-                # Debug: check all rows
-                async with db.execute(f"SELECT * FROM {self.positions_table}") as cursor:
-                    all_rows = await cursor.fetchall()
-                    logger.info(f"Total rows in {self.positions_table}: {len(all_rows)}")
-                    for r in all_rows:
-                        logger.info(f"Row: {dict(r)}")
-
                 # Load both active and partially_sold positions
                 query = f"SELECT * FROM {self.positions_table} WHERE status IN ('active', 'partially_sold')"
                 async with db.execute(query) as cursor:
@@ -191,17 +197,23 @@ class PositionManager:
                             sold_portions=json.loads(row_dict['sold_portions']),
                             status=row_dict['status'],
                             buy_gas_price=row_dict.get('buy_gas_price', 0) or 0,
+                            pair_address=row_dict.get('pair_address', '') or '',
                             current_price=row_dict.get('current_price', 0.0) or 0.0,
                             pnl_percentage=row_dict.get('pnl_percentage', 0.0) or 0.0
                         )
                         # Recalculate values if needed
                         pos.current_value_bnb = pos.token_amount * pos.current_price
                         self.positions[pos.token_address] = pos
+                        
+                        # Restart monitoring if pair_address is available
+                        if pos.pair_address:
+                            self.start_watching(pos.token_address, pos.pair_address)
+                            
             logger.info(f"恢复了 {len(self.positions)} 个活跃仓位")
         except Exception as e:
             logger.error(f"恢复仓位失败: {e}")
 
-    async def add_position(self, token_address, token_name, buy_price, buy_amount_bnb, token_amount, buy_gas_price=0, dex_data=None):
+    async def add_position(self, token_address, token_name, buy_price, buy_amount_bnb, token_amount, buy_gas_price=0, dex_data=None, pair_address=""):
         """添加新仓位"""
         # 每日风控检查
         if not self._check_daily_risk_allow_buy():
@@ -218,7 +230,8 @@ class PositionManager:
             highest_price=buy_price,
             sold_portions=[],
             status="active",
-            buy_gas_price=buy_gas_price
+            buy_gas_price=buy_gas_price,
+            pair_address=pair_address
         )
         
         if dex_data:
@@ -234,6 +247,10 @@ class PositionManager:
         self.positions[token_address] = pos
         await self._save_position(pos)
         
+        # Start monitoring
+        if pair_address:
+            self.start_watching(token_address, pair_address)
+        
         # 更新每日统计
         self._update_daily_stats(buy=True)
         return True
@@ -244,39 +261,150 @@ class PositionManager:
             async with aiosqlite.connect(self.db_path) as db:
                 await db.execute(f"""
                     INSERT OR REPLACE INTO {self.positions_table} 
-                    (token_address, token_name, buy_price_bnb, buy_amount_bnb, token_amount, buy_time, highest_price, sold_portions, status, buy_gas_price, current_price, pnl_percentage)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (token_address, token_name, buy_price_bnb, buy_amount_bnb, token_amount, buy_time, highest_price, sold_portions, status, buy_gas_price, pair_address, current_price, pnl_percentage)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     pos.token_address, pos.token_name, pos.buy_price_bnb, pos.buy_amount_bnb, 
                     pos.token_amount, pos.buy_time, pos.highest_price, json.dumps(pos.sold_portions), pos.status, pos.buy_gas_price,
-                    pos.current_price, pos.pnl_percentage
+                    pos.pair_address, pos.current_price, pos.pnl_percentage
                 ))
                 await db.commit()
         except Exception as e:
             logger.error(f"保存仓位失败: {e}")
 
+    def start_watching(self, token_address, pair_address):
+        """启动单个币种的事件监听"""
+        if token_address in self.watch_tasks:
+            return # Already watching
+            
+        task = asyncio.create_task(self.watch_swap_events(token_address, pair_address))
+        self.watch_tasks[token_address] = task
+        logger.info(f"已为 {token_address[:8]} 启动实时价格监听 (Event-Driven)")
+
+    def stop_watching(self, token_address):
+        """停止监听"""
+        if token_address in self.watch_tasks:
+            self.watch_tasks[token_address].cancel()
+            del self.watch_tasks[token_address]
+            logger.info(f"停止监听 {token_address[:8]}")
+
+    async def watch_swap_events(self, token_address: str, pair_address: str):
+        """
+        监听指定交易对的Swap事件
+        每次有Swap发生就立即更新价格
+        """
+        SWAP_EVENT_TOPIC = "0xd78ad95fa46c994b6551d0da85fc275fe613ce37657fb8d5e3d130840159d822"
+        # Fix: Access network config from executor.config, not self.config (which is position_management)
+        ws_url = self.executor.config.get("network", {}).get("ws_node")
+        
+        if not ws_url:
+            logger.warning(f"[{token_address}] 未配置 ws_node，无法启动事件监听")
+            return
+
+        while self.running:
+            try:
+                # Use WebSocketProvider (v7 compatible)
+                async with AsyncWeb3(AsyncWeb3.WebSocketProvider(ws_url)) as w3_ws:
+                    # Inject POA middleware for BSC
+                    from web3.middleware import ExtraDataToPOAMiddleware
+                    w3_ws.middleware_onion.inject(ExtraDataToPOAMiddleware, layer=0)
+                    
+                    if not await w3_ws.is_connected():
+                        logger.error(f"[{token_address}] WS连接失败")
+                        await asyncio.sleep(5)
+                        continue
+
+                    # 订阅
+                    subscription_id = await w3_ws.eth.subscribe('logs', {
+                        'address': pair_address,
+                        'topics': [SWAP_EVENT_TOPIC]
+                    })
+                    
+                    logger.info(f"监听就绪: {token_address[:8]} (SubID: {subscription_id})")
+                    
+                    # 监听循环
+                    async for response in w3_ws.socket.process_subscriptions():
+                        try:
+                            start_time = time.time()
+                            # Swap发生了，立即重新计算价格
+                            # Pass cache_only=False to force re-fetch reserves
+                            new_price_info, err = await self._get_price_onchain(token_address, pair_address)
+                            
+                            if new_price_info:
+                                new_price = new_price_info.get('price_bnb', 0.0)
+                                liquidity = new_price_info.get('liquidity_bnb', 0.0)
+                                
+                                if new_price > 0:
+                                    pos = self.positions.get(token_address)
+                                    # Double check status
+                                    if not pos or pos.status not in ['active', 'partially_sold']:
+                                        return # Stop loop
+                                        
+                                    # Update & Check Strategies IMMEDIATELY
+                                    await self._update_position_price(pos, new_price, 'swap_event', liquidity)
+                                    await self._check_strategies(pos, new_price, liquidity)
+                                    
+                                    # 记录耗时 (超过200ms才打印，避免刷屏)
+                                    elapsed = (time.time() - start_time) * 1000
+                                    if elapsed > 200:
+                                        logger.debug(f"⚡ [Event] {pos.token_name} 价格更新完成 | 耗时: {elapsed:.2f}ms | 来源: Swap事件")
+                                    
+                        except Exception as inner_e:
+                            logger.error(f"处理Swap事件异常: {inner_e}")
+                            
+            except asyncio.CancelledError:
+                logger.info(f"监听任务被取消: {token_address[:8]}")
+                break
+            except Exception as e:
+                logger.error(f"Swap监听连接断开 ({token_address}): {e}, 5秒后重连...")
+                await asyncio.sleep(5)
+            
+            # Check if we should stop loop (redundant with CancelledError but safe)
+            pos = self.positions.get(token_address)
+            if not pos or pos.status not in ['active', 'partially_sold']:
+                break
+
     async def start_monitoring(self):
-        """启动监控循环 (Batch Mode + On-Chain Fallback)"""
+        """启动监控循环 (Fallback Polling + Task Health Check)"""
         self.running = True
-        logger.info("启动仓位监控循环 (Batch Mode + On-Chain Fallback)...")
+        logger.info("启动仓位监控循环 (Fallback Polling, 30s interval)...")
         
         from utils.dexscreener_client import get_batch_prices
         
         last_dashboard_time = 0
-        monitor_interval = self.config.get("monitor_interval", 5) # Default to 5s for batch updates
+        monitor_interval = 30 # Slower interval for fallback
         
         while self.running:
             try:
                 # 1. 每日统计重置
                 self._check_daily_reset()
                 
-                # 2. Get active tokens
+                # 2. Check Watch Tasks Health
+                for token_address, task in list(self.watch_tasks.items()):
+                    if task.done():
+                        # Check exception
+                        try:
+                            exc = task.exception()
+                            if exc:
+                                logger.warning(f"{token_address[:8]} 事件监听异常断开: {exc}")
+                        except:
+                            pass
+                            
+                        logger.warning(f"{token_address[:8]} 事件监听已停止，尝试重启...")
+                        pos = self.positions.get(token_address)
+                        if pos and pos.pair_address and pos.status in ['active', 'partially_sold']:
+                            new_task = asyncio.create_task(
+                                self.watch_swap_events(token_address, pos.pair_address)
+                            )
+                            self.watch_tasks[token_address] = new_task
+                
+                # 3. Get active tokens
                 active_tokens = list(self.positions.keys())
                 if not active_tokens:
                     await asyncio.sleep(monitor_interval)
                     continue
                 
-                # 3. Batch Query (DexScreener)
+                # 4. Batch Query (DexScreener) - Fallback
                 all_prices = {}
                 try:
                     all_prices = await get_batch_prices(active_tokens)
@@ -284,7 +412,7 @@ class PositionManager:
                     logger.warning(f"Batch price fetch failed (Network Issue?): {e}")
                     # Proceed to individual fallback
                 
-                # 4. Process each position in PARALLEL
+                # 5. Process each position in PARALLEL
                 tasks = [self._process_single_token(addr, all_prices) for addr in active_tokens]
                 results = await asyncio.gather(*tasks, return_exceptions=True)
                 for addr, exc in zip(active_tokens, results):
@@ -308,6 +436,8 @@ class PositionManager:
         if not pos or pos.status in ("sold", "closed"):
             return
 
+        start_time = time.time()
+        
         pair_data = all_prices.get(token_addr.lower()) if all_prices else None
 
         price_bnb = 0.0
@@ -347,6 +477,10 @@ class PositionManager:
         pos.fetch_fail_count = 0
         await self._update_position_price(pos, price_bnb, source, liquidity_bnb)
         await self._check_strategies(pos, price_bnb, liquidity_bnb)
+        
+        elapsed = (time.time() - start_time) * 1000
+        if elapsed > 500:
+             logger.debug(f"🔄 [Poll] {pos.token_name} 价格更新完成 | 耗时: {elapsed:.2f}ms | 来源: {source}")
 
     async def _update_position_price(self, pos, price_bnb, source, liquidity_bnb):
         """Helper to update position price"""
@@ -422,6 +556,7 @@ class PositionManager:
         if sold:
             if pos.token_amount <= 0 or pos.status in ("sold", "closed"):
                 logger.info(f"仓位 {pos.token_name} 已关闭")
+                self.stop_watching(pos.token_address)
                 if pos.token_address in self.positions:
                     del self.positions[pos.token_address]
             await self._save_position(pos)
@@ -457,7 +592,12 @@ class PositionManager:
             # 2. Get Reserves
             pair_contract = w3.eth.contract(address=pair_address, abi=PANCAKESWAP_PAIR_ABI)
             reserves = await pair_contract.functions.getReserves().call()
-            token0 = await pair_contract.functions.token0().call()
+            
+            if pair_address in self._pair_token0_cache:
+                token0 = self._pair_token0_cache[pair_address]
+            else:
+                token0 = await pair_contract.functions.token0().call()
+                self._pair_token0_cache[pair_address] = token0
             
             reserve0, reserve1, _ = reserves
             WBNB = self.executor.WBNB_ADDRESS
@@ -473,8 +613,12 @@ class PositionManager:
                 return None, "onchain_empty"
                 
             # 3. Get Decimals
-            token_contract = w3.eth.contract(address=AsyncWeb3.to_checksum_address(token_address), abi=ERC20_ABI)
-            decimals = await token_contract.functions.decimals().call()
+            if token_address in self._token_decimals_cache:
+                decimals = self._token_decimals_cache[token_address]
+            else:
+                token_contract = w3.eth.contract(address=AsyncWeb3.to_checksum_address(token_address), abi=ERC20_ABI)
+                decimals = await token_contract.functions.decimals().call()
+                self._token_decimals_cache[token_address] = decimals
             
             # 4. Calculate Price
             price_bnb = (bnb_reserve / 10**18) / (token_reserve / 10**decimals)
@@ -612,22 +756,23 @@ class PositionManager:
         if is_emergency:
             logger.warning(f"🚨 {pos.token_name} 触发紧急/手动卖出 ({reason})，跳过冷却检查")
         
-        if not is_emergency:
-            try:
-                trades_table = self.executor.trades_table
-                async with aiosqlite.connect(self.db_path) as db:
-                    # Only check for SUCCESSFUL or PENDING sells in the last 5s. 
-                    # If the last one FAILED, we should allow retrying immediately.
-                    cursor = await db.execute(
-                        f"SELECT COUNT(*) FROM {trades_table} WHERE token_address=? AND action='sell' AND status != 'failed' AND created_at > datetime('now', '-5 seconds')", 
-                        (pos.token_address,)
-                    )
-                    count = (await cursor.fetchone())[0]
-                    if count > 0:
-                        logger.warning(f"{pos.token_name} 5秒内已有成功卖出 ({count}次)，跳过 (非紧急情况)")
-                        return False
-            except Exception as e:
-                logger.error(f"防重复检查错误: {e}")
+        # 用户要求：去掉5秒内已有卖出判断条件，允许连续卖出
+        # if not is_emergency:
+        #     try:
+        #         trades_table = self.executor.trades_table
+        #         async with aiosqlite.connect(self.db_path) as db:
+        #             # Only check for SUCCESSFUL or PENDING sells in the last 5s. 
+        #             # If the last one FAILED, we should allow retrying immediately.
+        #             cursor = await db.execute(
+        #                 f"SELECT COUNT(*) FROM {trades_table} WHERE token_address=? AND action='sell' AND status != 'failed' AND created_at > datetime('now', '-5 seconds')", 
+        #                 (pos.token_address,)
+        #             )
+        #             count = (await cursor.fetchone())[0]
+        #             if count > 0:
+        #                 logger.warning(f"{pos.token_name} 5秒内已有成功卖出 ({count}次)，跳过 (非紧急情况)")
+        #                 return False
+        #     except Exception as e:
+        #         logger.error(f"防重复检查错误: {e}")
 
         self.selling_tokens.add(pos.token_address)
         try:
@@ -668,45 +813,63 @@ class PositionManager:
         
         target_gas_price = max(int(current_gas_price * 1.3), int(buy_gas_price * 1.1))
         
-        # 3. 预估 PnL（用于写入 trades 表）
-        sell_amount_est = pos.token_amount * (percentage / 100)
-        estimated_bnb = sell_amount_est * (pos.current_price or pos.buy_price_bnb)
-        cost_of_sold = sell_amount_est * pos.buy_price_bnb
-        est_pnl_bnb = estimated_bnb - cost_of_sold
-        est_pnl_pct = (est_pnl_bnb / pos.buy_amount_bnb * 100) if pos.buy_amount_bnb > 0 else 0.0
+        # 3. Calculate Real PnL Logic
+        current_holding = pos.token_amount
+        sold_history_amount = sum(item.get('amount', 0) for item in pos.sold_portions)
+        total_initial_tokens = current_holding + sold_history_amount
+        if total_initial_tokens == 0: total_initial_tokens = current_holding
 
         # 批量卖出逻辑 (如果卖出量 > 流动性 5%)
         sell_value_bnb = pos.current_value_bnb * (percentage / 100)
 
         if liquidity_bnb > 0 and sell_value_bnb > (liquidity_bnb * 0.05) and percentage > 99:
             logger.warning(f"卖出量 ({sell_value_bnb:.2f} BNB) 超过流动性 5%，启用分批卖出")
+            
+            # Batch 1: 50% of current holding
+            sell_amount_1 = current_holding * 0.5
+            real_pct_1 = (sell_amount_1 / total_initial_tokens) * 100
+            cost_basis_1 = pos.buy_amount_bnb * (real_pct_1 / 100)
+            
             res1 = await self.executor.sell_token(
                 pos.token_address, pos.token_name, 50,
                 slippage=slippage, gas_price=target_gas_price,
                 simulated_balance=pos.token_amount,
-                pnl_bnb=est_pnl_bnb * 0.5, pnl_percentage=est_pnl_pct,
-                manual_price=pos.current_price
+                manual_price=pos.current_price,
+                sell_percentage_real=real_pct_1,
+                cost_basis_bnb=cost_basis_1
             )
             await asyncio.sleep(5)
+            
+            # Batch 2: 100% of remaining (which is other 50% of original current holding)
             remaining_sim = pos.token_amount * 0.5
+            sell_amount_2 = remaining_sim
+            real_pct_2 = (sell_amount_2 / total_initial_tokens) * 100
+            cost_basis_2 = pos.buy_amount_bnb * (real_pct_2 / 100)
+            
             res2 = await self.executor.sell_token(
                 pos.token_address, pos.token_name, 100,
                 slippage=slippage, gas_price=target_gas_price,
                 simulated_balance=remaining_sim,
-                pnl_bnb=est_pnl_bnb * 0.5, pnl_percentage=est_pnl_pct,
-                manual_price=pos.current_price
+                manual_price=pos.current_price,
+                sell_percentage_real=real_pct_2,
+                cost_basis_bnb=cost_basis_2
             )
             res = res2
             total_bnb = float(res1.get("amount_bnb", 0)) + float(res2.get("amount_bnb", 0))
             res["amount_bnb"] = total_bnb
         else:
             # 正常卖出
+            sell_amount = current_holding * (percentage / 100)
+            real_pct = (sell_amount / total_initial_tokens) * 100
+            cost_basis = pos.buy_amount_bnb * (real_pct / 100)
+            
             res = await self.executor.sell_token(
                 pos.token_address, pos.token_name, percentage,
                 slippage=slippage, gas_price=target_gas_price,
                 simulated_balance=pos.token_amount,
-                pnl_bnb=est_pnl_bnb, pnl_percentage=est_pnl_pct,
-                manual_price=pos.current_price
+                manual_price=pos.current_price,
+                sell_percentage_real=real_pct,
+                cost_basis_bnb=cost_basis
             )
         
         if res["status"] == "success":

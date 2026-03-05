@@ -196,6 +196,7 @@ class BSCExecutor:
                     note TEXT,
                     pnl_bnb REAL DEFAULT 0,
                     pnl_percentage REAL DEFAULT 0,
+                    sell_percentage REAL DEFAULT 100,
                     expected_amount REAL DEFAULT 0,
                     actual_amount REAL DEFAULT 0,
                     slippage_pct REAL DEFAULT 0,
@@ -240,6 +241,8 @@ class BSCExecutor:
                     await db.execute(f"ALTER TABLE {self.trades_table} ADD COLUMN pnl_bnb REAL DEFAULT 0")
                 if "pnl_percentage" not in columns:
                     await db.execute(f"ALTER TABLE {self.trades_table} ADD COLUMN pnl_percentage REAL DEFAULT 0")
+                if "sell_percentage" not in columns:
+                    await db.execute(f"ALTER TABLE {self.trades_table} ADD COLUMN sell_percentage REAL DEFAULT 100")
                     
                 # New Columns for Slippage Tracking
                 if "expected_amount" not in columns:
@@ -780,16 +783,18 @@ class BSCExecutor:
             # 简单重试逻辑 (如果是 gas 不足可以考虑重试，这里简化处理)
             return {"status": "failed", "reason": str(e)}
 
-    async def sell_token(self, token_address, token_symbol="UNKNOWN", sell_percentage=100, slippage=None, gas_price=None, simulated_balance=None, pnl_bnb=0.0, pnl_percentage=0.0, manual_price=None):
+    async def sell_token(self, token_address, token_symbol="UNKNOWN", sell_percentage=100, slippage=None, gas_price=None, simulated_balance=None, pnl_bnb=0.0, pnl_percentage=0.0, manual_price=None, sell_percentage_real=None, cost_basis_bnb=None):
         """
         卖出代币
         :param token_address: 代币地址
         :param token_symbol: 代币符号
-        :param sell_percentage: 卖出比例 (0-100)
+        :param sell_percentage: 卖出比例 (0-100) - 相对于当前余额
         :param slippage: 滑点 (None则使用配置)
         :param gas_price: Gas价格 (None则自动获取)
         :param simulated_balance: 模拟持仓数量 (仅限模拟模式)
         :param manual_price: 手动指定价格 (BNB), 用于模拟模式准确计算
+        :param sell_percentage_real: 真实卖出比例 (相对于总持仓), 用于统计
+        :param cost_basis_bnb: 本次卖出的成本 (BNB), 用于计算真实 PnL
         """
         token_address = self.w3_to_checksum(token_address)
         
@@ -843,6 +848,13 @@ class BSCExecutor:
                 sim_status = "failed_rug"
                 estimated_bnb = 0.0
             
+            # Calculate PnL if cost_basis is provided
+            if cost_basis_bnb is not None and cost_basis_bnb > 0:
+                pnl_bnb = estimated_bnb - cost_basis_bnb
+                pnl_percentage = (pnl_bnb / cost_basis_bnb) * 100
+                
+            final_sell_pct = sell_percentage_real if sell_percentage_real is not None else sell_percentage
+            
             logger.info(f"[Simulation] Sell {token_symbol}: Raw={estimated_bnb_raw:.6f} BNB, Deducted({est_slippage_pct}%)={estimated_bnb:.6f} BNB, Status={sim_status}")
             
             timestamp_str = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
@@ -855,6 +867,7 @@ class BSCExecutor:
                 token_symbol=token_symbol,
                 pnl_bnb=pnl_bnb,
                 pnl_percentage=pnl_percentage,
+                sell_percentage=final_sell_pct,
                 expected_amount=estimated_bnb_raw,
                 actual_amount=estimated_bnb,
                 slippage_pct=est_slippage_pct,
@@ -977,11 +990,21 @@ class BSCExecutor:
                 
                 total_cost_bnb = slippage_bnb + gas_cost_bnb
                 
+                # Calculate PnL if cost_basis is provided
+                if cost_basis_bnb is not None and cost_basis_bnb > 0:
+                    pnl_bnb = bnb_got - cost_basis_bnb
+                    pnl_percentage = (pnl_bnb / cost_basis_bnb) * 100
+                    
+                final_sell_pct = sell_percentage_real if sell_percentage_real is not None else sell_percentage
+                
                 # 记录数据库
                 await self._log_trade(
                     token_address, token_symbol, "sell", 
                     str(sell_amount_human), str(bnb_got), 
                     tx_hash_hex, "success",
+                    pnl_bnb=pnl_bnb,
+                    pnl_percentage=pnl_percentage,
+                    sell_percentage=final_sell_pct,
                     expected_amount=expected_bnb_human,
                     actual_amount=bnb_got,
                     slippage_pct=slippage_pct,
@@ -1330,7 +1353,7 @@ class BSCExecutor:
 
     async def _log_trade(self, token_addr, token_name, action, amount_token, amount_bnb, tx_hash, status, price_bnb=None, token_symbol=None, pnl_bnb=0.0, pnl_percentage=0.0,
                          expected_amount=0.0, actual_amount=0.0, slippage_pct=0.0, slippage_bnb=0.0,
-                         gas_used=0, gas_price_gwei=0.0, gas_cost_bnb=0.0, total_cost_bnb=0.0):
+                         gas_used=0, gas_price_gwei=0.0, gas_cost_bnb=0.0, total_cost_bnb=0.0, sell_percentage=100.0):
         """记录交易到数据库"""
         try:
             # Try to calculate price_bnb if not provided
@@ -1360,14 +1383,14 @@ class BSCExecutor:
                 await db.execute(f"""
                     INSERT INTO {self.trades_table} (
                         token_address, token_name, token_symbol, action, amount_token, amount_bnb, price_bnb, 
-                        tx_hash, status, created_at, pnl_bnb, pnl_percentage,
+                        tx_hash, status, created_at, pnl_bnb, pnl_percentage, sell_percentage,
                         expected_amount, actual_amount, slippage_pct, slippage_bnb,
                         gas_used, gas_price_gwei, gas_cost_bnb, total_cost_bnb
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     token_addr, safe_token_name, token_symbol, action, float(amount_token), float(amount_bnb) if amount_bnb else 0.0, float(price_bnb) if price_bnb else 0.0, 
-                    tx_hash, status, timestamp, pnl_bnb, pnl_percentage,
+                    tx_hash, status, timestamp, pnl_bnb, pnl_percentage, float(sell_percentage),
                     float(expected_amount), float(actual_amount), float(slippage_pct), float(slippage_bnb),
                     int(gas_used), float(gas_price_gwei), float(gas_cost_bnb), float(total_cost_bnb)
                 ))

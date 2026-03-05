@@ -31,6 +31,22 @@ network:
     - https://1rpc.io/bnb
     primary: https://bsc-dataseed1.binance.org
   polling_interval: 1
+  ws_node: "wss://bsc-mainnet.nodereal.io/ws/v1/64a9df0874fb4a93b9d0a3849de012d3"
+  proxy:
+    enabled: true
+    http: "http://127.0.0.1:10809"
+    socks5: "socks5://127.0.0.1:10808"
+  # 哪些模块需要走代理
+  proxy_required:
+    - dexscreener
+    - coingecko
+    - okx
+  # 哪些模块直连（不走代理）
+  direct_connect:
+    - bsc_nodes
+    - bscscan
+    - honeypot
+    - goplus
   private_rpcs:
   - https://bsc.publicnode.com
   - https://bsc-mainnet.nodereal.io/v1/64a9df0874fb4a93b9d0a3849de012d3

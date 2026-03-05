@@ -343,7 +343,8 @@ class TradingBot:
                         buy_amount_bnb=amount_bnb_in, 
                         token_amount=token_amount,
                         buy_gas_price=buy_gas_price,
-                        dex_data=dex_data
+                        dex_data=dex_data,
+                        pair_address=pair_address
                     )
             else:
                 logger.info(f"Skipping {token_symbol} based on security check.")
