@@ -1,0 +1,13 @@
+aiohttp
+aiosqlite
+fastapi
+loguru
+python-dotenv
+pyyaml
+uvicorn
+web3
+requests
+pydantic
+eth-utils
+numpy
+pandas
