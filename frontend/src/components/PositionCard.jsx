@@ -3,6 +3,7 @@ import { Card, Text, Flex, Badge, Button, ProgressBar } from "@tremor/react";
 import { Copy, Check, Clock, AlertTriangle, Rocket, DollarSign, Pencil, X } from 'lucide-react';
 import { formatPrice } from '../utils/formatters';
 import api from '../utils/api';
+import GmgnLink from './common/GmgnLink';
 
 // 持仓时长（不含"前"，简洁格式）
 const formatHoldDuration = (buyTime) => {
@@ -299,11 +300,14 @@ const PositionCard = ({ pos, onSell }) => {
              )}
           </div>
           <div>
-            <Text className="text-white font-bold text-lg flex items-center gap-2">
-              {pos.token_symbol || pos.token_name}
-              {isSuperProfitable && <span className="text-xs">🚀</span>}
-              {soldBadge}
-            </Text>
+            <div className="flex items-center gap-2">
+              <Text className="text-white font-bold text-lg flex items-center gap-2">
+                {pos.token_symbol || pos.token_name}
+                {isSuperProfitable && <span className="text-xs">🚀</span>}
+                {soldBadge}
+              </Text>
+              <GmgnLink address={pos.token_address} />
+            </div>
             <div
               className="flex items-center gap-2 cursor-pointer group select-none"
               onClick={handleCopy}
