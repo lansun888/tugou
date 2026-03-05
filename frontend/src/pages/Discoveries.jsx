@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Card, Title, Text, Select, SelectItem, TextInput } from '@tremor/react';
-import { SearchIcon, EyeIcon, ArrowRightIcon, ArrowLeftIcon } from 'lucide-react';
+import { SearchIcon, EyeIcon, ArrowRightIcon, ArrowLeftIcon, CopyIcon, CheckIcon } from 'lucide-react';
 import api from '../utils/api';
 import DiscoveryDrawer from '../components/common/DiscoveryDrawer';
 import { formatDate } from '../utils/formatters';
@@ -146,6 +146,27 @@ const ScoreChip = ({ score, details = {} }) => {
   );
 };
 
+const CopyButton = ({ text }) => {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = (e) => {
+    e.stopPropagation();
+    navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <button 
+      onClick={handleCopy}
+      className="ml-1 p-0.5 text-gray-400 hover:text-gray-600 rounded transition-colors"
+      title="复制地址"
+    >
+      {copied ? <CheckIcon className="w-3 h-3 text-green-500" /> : <CopyIcon className="w-3 h-3" />}
+    </button>
+  );
+};
+
 const Discoveries = () => {
   const [discoveries, setDiscoveries] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -260,9 +281,12 @@ const Discoveries = () => {
                         <td className="py-3 px-4">
                           <div className="flex flex-col">
                             <span className="font-medium text-gray-900">{item.token_symbol}</span>
-                            <span className="text-xs text-gray-400 font-mono truncate max-w-[100px]" title={item.token_address}>
-                              {item.token_address}
-                            </span>
+                            <div className="flex items-center">
+                              <span className="text-xs text-gray-400 font-mono truncate max-w-[100px]" title={item.token_address}>
+                                {item.token_address}
+                              </span>
+                              <CopyButton text={item.token_address} />
+                            </div>
                           </div>
                         </td>
                         <td className="py-3 px-4 font-mono text-gray-700">

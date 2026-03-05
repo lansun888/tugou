@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Card, Title, Text, Badge, Select, SelectItem, Metric, TextInput } from '@tremor/react';
 import api from '../utils/api';
-import { formatNumber, formatTimeAgo } from '../utils/formatters';
+import { formatNumber, formatTimeAgo, formatPrice } from '../utils/formatters';
 import { ExternalLinkIcon, ArrowRightIcon, ArrowLeftIcon, ChevronDownIcon, ChevronRightIcon, SearchIcon } from 'lucide-react';
 
 const parseDate = (value) => {
@@ -60,6 +60,9 @@ const getLineColor = (trade) => {
 };
 
 const getTypeBadge = (trade) => {
+  if (trade.status === 'failed_rug') {
+    return { text: 'SELL·失败', color: 'rose', className: 'border border-rose-500 bg-transparent text-rose-600' };
+  }
   if (trade.action === 'buy') {
     return { text: 'BUY', color: 'blue', className: '' };
   }
@@ -87,6 +90,26 @@ const formatGroupPnl = (group) => {
   const sign = group.totalPnlBnb >= 0 ? '+' : '';
   const percentText = group.pnlPercent !== null ? ` (${group.pnlPercent >= 0 ? '+' : ''}${formatNumber(group.pnlPercent, 2)}%)` : '';
   return `${sign}${formatNumber(group.totalPnlBnb, 4)} BNB${percentText}`;
+};
+
+const formatCost = (trade) => {
+  if ((trade.slippage_pct === undefined || trade.slippage_pct === null) && (trade.gas_cost_bnb === undefined || trade.gas_cost_bnb === null)) {
+    return <span className="text-gray-400">--</span>;
+  }
+  
+  const slippagePct = trade.slippage_pct || 0;
+  const gasCost = trade.gas_cost_bnb || 0;
+  
+  return (
+    <div className="flex flex-col items-end text-xs">
+      <span className={slippagePct > 5 ? "text-rose-500 font-bold" : "text-gray-600"}>
+        滑: {formatNumber(slippagePct, 2)}%
+      </span>
+      <span className="text-gray-400">
+        Gas: {formatNumber(gasCost, 5)}
+      </span>
+    </div>
+  );
 };
 
 const isRealHash = (hash) => typeof hash === 'string' && hash.startsWith('0x') && hash.length > 12;
@@ -269,10 +292,23 @@ const Trades = () => {
       }
       if (trade.action === 'sell') {
         totalSell += trade.amount_bnb || 0;
-        sellCount += 1;
-        const pnl = trade.pnl_bnb || 0;
-        totalPnl += pnl;
-        if (pnl > 0) winCount += 1;
+        if (trade.status !== 'failed_rug') {
+            sellCount += 1;
+            const pnl = trade.pnl_bnb || 0;
+            totalPnl += pnl;
+            if (pnl > 0) winCount += 1;
+        } else {
+            // Rug failed sell: 0 revenue, realized loss.
+            // PnL is negative (cost lost).
+            // But user asked to EXCLUDE from win rate statistics.
+            // So we don't increment sellCount.
+            // We still add PnL to totalPnl?
+            // "status='failed_rug' ... Not count in win rate"
+            // "totalPnl" logic in summary is local. The dashboard uses backend API.
+            // So I'll just skip sellCount increment.
+            const pnl = trade.pnl_bnb || 0;
+            totalPnl += pnl; 
+        }
       }
     });
     const winRate = sellCount > 0 ? (winCount / sellCount) * 100 : 0;
@@ -371,6 +407,7 @@ const Trades = () => {
                     <th className="py-3 px-4 text-right">数量</th>
                     <th className="py-3 px-4 text-right">价格 (BNB)</th>
                     <th className="py-3 px-4 text-right">总额 (BNB)</th>
+                    <th className="py-3 px-4 text-right">交易成本</th>
                     <th className="py-3 px-4 text-right">盈亏</th>
                     <th className="py-3 px-4">交易哈希</th>
                     <th className="py-3 px-4">状态</th>
@@ -386,7 +423,7 @@ const Trades = () => {
                             className="bg-gray-50 hover:bg-gray-100 cursor-pointer"
                             onClick={() => setExpandedGroups((prev) => ({ ...prev, [group.key]: !expanded }))}
                           >
-                            <td colSpan="10" className="py-3 px-4">
+                            <td colSpan="11" className="py-3 px-4">
                               <div className="flex items-center justify-between">
                                 <div className="flex items-center gap-3">
                                   {expanded ? <ChevronDownIcon className="w-4 h-4 text-gray-500" /> : <ChevronRightIcon className="w-4 h-4 text-gray-500" />}
@@ -409,7 +446,9 @@ const Trades = () => {
                           {expanded && group.trades.map((trade) => {
                             const badge = getTypeBadge(trade);
                             const pnlDisplay = trade.action === 'sell'
-                              ? formatPnl(trade.pnl_bnb, trade.pnl_percentage)
+                              ? (trade.status === 'failed_rug' 
+                                  ? { text: '💀已归零', className: 'text-gray-500 italic' }
+                                  : formatPnl(trade.pnl_bnb, trade.pnl_percentage))
                               : {
                                 text: group.totalSellBnb > 0 ? `已实现 ${formatGroupPnl(group)}` : '持仓中',
                                 className: group.totalSellBnb > 0 ? (group.totalPnlBnb >= 0 ? 'text-emerald-600' : 'text-rose-600') : 'text-gray-500'
@@ -425,8 +464,8 @@ const Trades = () => {
                                 <td className="py-3 px-4 font-medium text-gray-900">
                                   <div className="flex flex-col">
                                     <span>
-                                      {trade.token_symbol || 'Unknown'}
-                                      {trade.token_name && trade.token_name !== trade.token_symbol && (
+                                      {(trade.token_symbol && trade.token_symbol !== '$') ? trade.token_symbol : (trade.token_name && trade.token_name !== '$' ? trade.token_name : (trade.token_address ? trade.token_address.substring(0,8) : 'Unknown'))}
+                                      {trade.token_name && trade.token_name !== '$' && trade.token_name !== trade.token_symbol && trade.token_symbol !== '$' && (
                                         <span className="ml-1 text-xs text-gray-500">({trade.token_name})</span>
                                       )}
                                     </span>
@@ -438,16 +477,20 @@ const Trades = () => {
                                 <td className="py-3 px-4">
                                   <Badge color={badge.color} size="xs" className={badge.className}>
                                     {badge.text}
+                                    {trade.trade_type === 'simulation' && <span className="ml-1 text-[10px] opacity-70">模拟</span>}
                                   </Badge>
                                 </td>
                                 <td className="py-3 px-4 text-right font-mono">
                                   {formatNumber(trade.amount_token)}
                                 </td>
                                 <td className="py-3 px-4 text-right font-mono text-gray-600">
-                                  {formatNumber(trade.price_bnb, 6)}
+                                  {formatPrice(trade.price_bnb)}
                                 </td>
                                 <td className="py-3 px-4 text-right font-bold text-gray-900 font-mono">
-                                  {formatNumber(trade.amount_bnb, 4)}
+                                  {trade.status === 'failed_rug' ? <span className="bg-gray-100 text-gray-500 px-1 rounded text-xs">0.000</span> : formatNumber(trade.amount_bnb, 4)}
+                                </td>
+                                <td className="py-3 px-4 text-right font-mono text-gray-600" title={`预期: ${formatNumber(trade.expected_amount)}\n实际: ${formatNumber(trade.actual_amount)}\n滑点损耗: ${formatNumber(trade.slippage_bnb, 5)} BNB\nGas Price: ${trade.gas_price_gwei} Gwei`}>
+                                  {formatCost(trade)}
                                 </td>
                                 <td className={`py-3 px-4 text-right font-mono ${pnlDisplay.className}`}>
                                   {pnlDisplay.text}
@@ -466,6 +509,10 @@ const Trades = () => {
                                       {trade.tx_hash.substring(0, 6)}...{trade.tx_hash.substring(trade.tx_hash.length - 4)}
                                       <ExternalLinkIcon className="w-3 h-3" />
                                     </a>
+                                  ) : (trade.tx_hash && (trade.tx_hash.startsWith('SIM_') || trade.tx_hash.startsWith('simulated_'))) ? (
+                                     <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-500 border border-gray-200 cursor-default" title={trade.tx_hash}>
+                                       模拟
+                                     </span>
                                   ) : (
                                     <span className="text-xs text-gray-400">--</span>
                                   )}
@@ -485,7 +532,7 @@ const Trades = () => {
                     })
                   ) : (
                     <tr>
-                      <td colSpan="10" className="text-center py-8 text-gray-500">
+                      <td colSpan="11" className="text-center py-8 text-gray-500">
                         暂无交易记录
                       </td>
                     </tr>

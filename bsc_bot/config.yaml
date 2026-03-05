@@ -97,5 +97,6 @@ trading:
     mode: normal
     normal_multiplier: 1.15
   slippage: 12
+  slippage_alert_threshold: 15
   stop_loss_percentage: -20
   take_profit_percentage: 50

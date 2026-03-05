@@ -1,6 +1,7 @@
 import asyncio
 import os
 import time
+import datetime
 import json
 import logging
 import aiosqlite
@@ -194,7 +195,15 @@ class BSCExecutor:
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     note TEXT,
                     pnl_bnb REAL DEFAULT 0,
-                    pnl_percentage REAL DEFAULT 0
+                    pnl_percentage REAL DEFAULT 0,
+                    expected_amount REAL DEFAULT 0,
+                    actual_amount REAL DEFAULT 0,
+                    slippage_pct REAL DEFAULT 0,
+                    slippage_bnb REAL DEFAULT 0,
+                    gas_used INTEGER DEFAULT 0,
+                    gas_price_gwei REAL DEFAULT 0,
+                    gas_cost_bnb REAL DEFAULT 0,
+                    total_cost_bnb REAL DEFAULT 0
                 )
             """)
             
@@ -231,6 +240,24 @@ class BSCExecutor:
                     await db.execute(f"ALTER TABLE {self.trades_table} ADD COLUMN pnl_bnb REAL DEFAULT 0")
                 if "pnl_percentage" not in columns:
                     await db.execute(f"ALTER TABLE {self.trades_table} ADD COLUMN pnl_percentage REAL DEFAULT 0")
+                    
+                # New Columns for Slippage Tracking
+                if "expected_amount" not in columns:
+                    await db.execute(f"ALTER TABLE {self.trades_table} ADD COLUMN expected_amount REAL DEFAULT 0")
+                if "actual_amount" not in columns:
+                    await db.execute(f"ALTER TABLE {self.trades_table} ADD COLUMN actual_amount REAL DEFAULT 0")
+                if "slippage_pct" not in columns:
+                    await db.execute(f"ALTER TABLE {self.trades_table} ADD COLUMN slippage_pct REAL DEFAULT 0")
+                if "slippage_bnb" not in columns:
+                    await db.execute(f"ALTER TABLE {self.trades_table} ADD COLUMN slippage_bnb REAL DEFAULT 0")
+                if "gas_used" not in columns:
+                    await db.execute(f"ALTER TABLE {self.trades_table} ADD COLUMN gas_used INTEGER DEFAULT 0")
+                if "gas_price_gwei" not in columns:
+                    await db.execute(f"ALTER TABLE {self.trades_table} ADD COLUMN gas_price_gwei REAL DEFAULT 0")
+                if "gas_cost_bnb" not in columns:
+                    await db.execute(f"ALTER TABLE {self.trades_table} ADD COLUMN gas_cost_bnb REAL DEFAULT 0")
+                if "total_cost_bnb" not in columns:
+                    await db.execute(f"ALTER TABLE {self.trades_table} ADD COLUMN total_cost_bnb REAL DEFAULT 0")
             except Exception as e:
                 logger.error(f"Trade table migration failed: {e}")
 
@@ -570,13 +597,46 @@ class BSCExecutor:
                 token_amount = amount_bnb_in / price_bnb
                 
                 # 记录模拟交易
-                tx_hash_sim = "simulated_buy_" + str(int(time.time()))
+                timestamp_str = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+                tx_hash_sim = f"SIM_{token_symbol}_{timestamp_str}"
+                
+                # Slippage/Gas Estimation
+                est_slippage_pct = slippage_percent * 0.6
+                # Back-calculate expected: actual = expected * (1 - slip) -> expected = actual / (1 - slip)
+                # But here 'token_amount' is derived from price without slippage?
+                # In simulation: token_amount = amount_bnb_in / price_bnb. This is "Theoretical Amount".
+                # So expected = token_amount.
+                # And actual = token_amount * (1 - slip)? 
+                # Wait, simulation usually deducts on SELL. Buy is 0 friction?
+                # User says: "Simulation slippage = Config * 0.6".
+                # If Buy is 0 friction in my current code, then Actual = Expected. Slippage = 0.
+                # But user wants to track "Simulated Cost".
+                # I'll calculate it as if there WAS slippage.
+                # Let's say Actual = token_amount. Expected = token_amount / (1 - 0.00).
+                # User instructions: "模拟滑点 = 设置的滑点参数 × 0.6".
+                # So I'll record slippage_pct = config * 0.6.
+                # And calculate slippage_bnb based on that.
+                est_slippage_bnb = amount_bnb_in * (est_slippage_pct / 100)
+                
+                est_gas_price_gwei = 3.0
+                est_gas_used = 300000
+                est_gas_cost_bnb = est_gas_used * est_gas_price_gwei * 1e9 / 1e18
+                est_total_cost = est_slippage_bnb + est_gas_cost_bnb
+
                 await self._log_trade(
                     token_address, token_symbol, "buy", 
                     str(token_amount), str(amount_bnb_in), 
                     tx_hash_sim, "success",
                     price_bnb=str(price_bnb),
-                    token_symbol=token_symbol
+                    token_symbol=token_symbol,
+                    expected_amount=token_amount,
+                    actual_amount=token_amount, # In sim buy we usually get full amount
+                    slippage_pct=est_slippage_pct,
+                    slippage_bnb=est_slippage_bnb,
+                    gas_used=est_gas_used,
+                    gas_price_gwei=est_gas_price_gwei,
+                    gas_cost_bnb=est_gas_cost_bnb,
+                    total_cost_bnb=est_total_cost
                 )
                 
                 return {
@@ -636,18 +696,67 @@ class BSCExecutor:
             
             if receipt.status == 1:
                 logger.success(f"买入 {token_symbol} 成功!")
-                # 查询实际获得代币数量
-                token_contract = self.w3.eth.contract(address=token_address, abi=ERC20_ABI)
-                token_balance = await token_contract.functions.balanceOf(self.account.address).call()
-                token_amount = self.w3.from_wei(token_balance, 'ether') # 假设18位精度，如果不是需调整
+                
+                # 1. Calculate Actual Token Amount Received
+                # Use _parse_transfer_log for precision
+                raw_token_amount = self._parse_transfer_log(receipt, token_address)
+                
+                # Get decimals
+                decimals = self.token_decimals_cache.get(token_address)
+                if not decimals:
+                    try:
+                        token_contract = self.w3.eth.contract(address=token_address, abi=ERC20_ABI)
+                        decimals = await token_contract.functions.decimals().call()
+                        self.token_decimals_cache[token_address] = decimals
+                    except:
+                        decimals = 18
+                
+                token_amount = raw_token_amount / (10 ** decimals)
+                
+                # Fallback if parse fails (e.g. internal tx?) -> Use balance
+                if token_amount == 0:
+                     token_contract = self.w3.eth.contract(address=token_address, abi=ERC20_ABI)
+                     token_balance = await token_contract.functions.balanceOf(self.account.address).call()
+                     token_amount = token_balance / (10 ** decimals)
                 
                 self.bought_tokens.add(token_address.lower())
+                
+                # 2. Calculate Slippage
+                # expected_token_out is raw integer from getAmountsOut
+                expected_human = expected_token_out / (10 ** decimals)
+                
+                slippage_pct = 0.0
+                if expected_human > 0:
+                    slippage_pct = ((expected_human - token_amount) / expected_human) * 100
+                
+                # Slippage in BNB = Slippage% * AmountBNBIn
+                slippage_bnb = amount_bnb_in * (slippage_pct / 100)
+                
+                # Check alert
+                await self._check_slippage_alert(slippage_pct, token_symbol, "buy", tx_hash_hex)
+                
+                # 3. Calculate Gas Cost
+                gas_used = receipt['gasUsed']
+                # effectiveGasPrice is available in EIP-1559, otherwise use tx gasPrice
+                effective_gas_price = receipt.get('effectiveGasPrice', gas_price)
+                gas_price_gwei = effective_gas_price / 1e9
+                gas_cost_bnb = (gas_used * effective_gas_price) / 1e18
+                
+                total_cost_bnb = slippage_bnb + gas_cost_bnb
                 
                 # 记录数据库
                 await self._log_trade(
                     token_address, token_symbol, "buy", 
                     str(token_amount), str(amount_bnb_in), 
-                    tx_hash_hex, "success"
+                    tx_hash_hex, "success",
+                    expected_amount=expected_human,
+                    actual_amount=token_amount,
+                    slippage_pct=slippage_pct,
+                    slippage_bnb=slippage_bnb,
+                    gas_used=gas_used,
+                    gas_price_gwei=gas_price_gwei,
+                    gas_cost_bnb=gas_cost_bnb,
+                    total_cost_bnb=total_cost_bnb
                 )
                 
                 return {
@@ -713,24 +822,47 @@ class BSCExecutor:
                  logger.warning(f"无法获取 {token_symbol} 价格，模拟卖出金额可能为0")
 
             # Apply slippage/tax deduction for realistic simulation
-            # Use configured slippage or default 15% as effective deduction
-            slippage_percent = float(self.config.get("trading", {}).get("slippage", 15))
-            effective_deduction = slippage_percent / 100
+            # User requirement: Simulation slippage = Config * 0.6
+            config_slippage = float(self.config.get("trading", {}).get("slippage", 15))
+            est_slippage_pct = config_slippage * 0.6
             
             estimated_bnb_raw = sell_amount * price_bnb
-            estimated_bnb = estimated_bnb_raw * (1 - effective_deduction)
+            estimated_bnb = estimated_bnb_raw * (1 - est_slippage_pct/100)
             
-            logger.info(f"[Simulation] Sell {token_symbol}: Raw={estimated_bnb_raw:.6f} BNB, Deducted({slippage_percent}%)={estimated_bnb:.6f} BNB")
+            slippage_bnb = estimated_bnb_raw - estimated_bnb
             
-            tx_hash_sim = "simulated_sell_" + str(int(time.time()))
+            # Gas Estimation
+            est_gas_used = 300000
+            est_gas_price_gwei = 3.0
+            est_gas_cost_bnb = est_gas_used * est_gas_price_gwei * 1e9 / 1e18
+            
+            total_cost_bnb = slippage_bnb + est_gas_cost_bnb
+            
+            sim_status = "success"
+            if estimated_bnb < 0.000001:
+                sim_status = "failed_rug"
+                estimated_bnb = 0.0
+            
+            logger.info(f"[Simulation] Sell {token_symbol}: Raw={estimated_bnb_raw:.6f} BNB, Deducted({est_slippage_pct}%)={estimated_bnb:.6f} BNB, Status={sim_status}")
+            
+            timestamp_str = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+            tx_hash_sim = f"SIM_{token_symbol}_{timestamp_str}"
             await self._log_trade(
                 token_address, token_symbol, "sell",
                 str(sell_amount), str(estimated_bnb),
-                tx_hash_sim, "success",
+                tx_hash_sim, sim_status,
                 price_bnb=str(price_bnb),
                 token_symbol=token_symbol,
                 pnl_bnb=pnl_bnb,
-                pnl_percentage=pnl_percentage
+                pnl_percentage=pnl_percentage,
+                expected_amount=estimated_bnb_raw,
+                actual_amount=estimated_bnb,
+                slippage_pct=est_slippage_pct,
+                slippage_bnb=slippage_bnb,
+                gas_used=est_gas_used,
+                gas_price_gwei=est_gas_price_gwei,
+                gas_cost_bnb=est_gas_cost_bnb,
+                total_cost_bnb=total_cost_bnb
             )
             
             return {
@@ -814,16 +946,50 @@ class BSCExecutor:
             
             if receipt.status == 1:
                 logger.success(f"卖出 {token_symbol} 成功!")
+                
+                # 1. Calculate Actual BNB Received
+                raw_bnb_got = self._parse_swap_output_log(receipt)
+                
+                if raw_bnb_got == 0:
+                    # Fallback: Use expected_bnb_out if parsing fails
+                    raw_bnb_got = expected_bnb_out
+                
+                bnb_got = float(self.w3.from_wei(raw_bnb_got, 'ether'))
+                expected_bnb_human = float(self.w3.from_wei(expected_bnb_out, 'ether'))
+                
+                sell_amount_human = float(self.w3.from_wei(sell_amount, 'ether'))
+                
+                # 2. Calculate Slippage
+                slippage_pct = 0.0
+                if expected_bnb_human > 0:
+                    slippage_pct = ((expected_bnb_human - bnb_got) / expected_bnb_human) * 100
+                
+                slippage_bnb = expected_bnb_human - bnb_got
+                
+                # Check alert
+                await self._check_slippage_alert(slippage_pct, token_symbol, "sell", tx_hash_hex)
+                
+                # 3. Gas
+                gas_used = receipt['gasUsed']
+                effective_gas_price = receipt.get('effectiveGasPrice', gas_price)
+                gas_price_gwei = effective_gas_price / 1e9
+                gas_cost_bnb = (gas_used * effective_gas_price) / 1e18
+                
+                total_cost_bnb = slippage_bnb + gas_cost_bnb
+                
                 # 记录数据库
-                bnb_got = self.w3.from_wei(expected_bnb_out, 'ether') # 近似值
-                
-                # Convert sell_amount (Wei) to human-readable (Ether) to match buy_token behavior
-                sell_amount_human = self.w3.from_wei(sell_amount, 'ether')
-                
                 await self._log_trade(
                     token_address, token_symbol, "sell", 
                     str(sell_amount_human), str(bnb_got), 
-                    tx_hash_hex, "success"
+                    tx_hash_hex, "success",
+                    expected_amount=expected_bnb_human,
+                    actual_amount=bnb_got,
+                    slippage_pct=slippage_pct,
+                    slippage_bnb=slippage_bnb,
+                    gas_used=gas_used,
+                    gas_price_gwei=gas_price_gwei,
+                    gas_cost_bnb=gas_cost_bnb,
+                    total_cost_bnb=total_cost_bnb
                 )
                 return {"status": "success", "tx_hash": tx_hash_hex, "amount_bnb": bnb_got}
             else:
@@ -1018,7 +1184,153 @@ class BSCExecutor:
             logger.warning(f"查询价格失败: {e}")
             return None
 
-    async def _log_trade(self, token_addr, token_name, action, amount_token, amount_bnb, tx_hash, status, price_bnb=None, token_symbol=None, pnl_bnb=0.0, pnl_percentage=0.0):
+    def _parse_transfer_log(self, receipt, token_address):
+        """解析 Transfer 事件获取实际到账数量"""
+        try:
+            token_address = token_address.lower()
+            my_address = self.account.address.lower()
+            amount = 0
+            
+            # Transfer Event Signature
+            TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
+            
+            for log in receipt['logs']:
+                if log['address'].lower() == token_address:
+                    if len(log['topics']) > 0 and log['topics'][0].hex().lower() == TRANSFER_TOPIC:
+                        # topic[1] is from, topic[2] is to. Topics are 32 bytes.
+                        if len(log['topics']) >= 3:
+                            # Extract address from last 20 bytes
+                            to_addr = '0x' + log['topics'][2].hex()[-40:]
+                            if to_addr.lower() == my_address:
+                                # value is in data
+                                try:
+                                    val = int(log['data'].hex(), 16)
+                                    amount += val
+                                except:
+                                    pass
+            return amount
+        except Exception as e:
+            logger.error(f"解析 Transfer Log 失败: {e}")
+            return 0
+
+    def _parse_swap_output_log(self, receipt):
+        """解析 Swap 事件获取实际 BNB (WBNB) 输出"""
+        try:
+            # Swap Event Signature
+            SWAP_TOPIC = "0xd78ad95fa46c994b6551d0da85fc275fe613ce37657fb8d5e3d130840159d822"
+            wbnb_addr = self.WBNB_ADDRESS.lower()
+            total_out = 0
+            
+            for log in receipt['logs']:
+                if len(log['topics']) > 0 and log['topics'][0].hex().lower() == SWAP_TOPIC:
+                    # Check if this pair involves WBNB
+                    # We can't easily check pair address without caching, but we can check if the output "makes sense"
+                    # Ideally we check if the log emitter is a pair with WBNB.
+                    # Simplified: Just look at the data. Swap data: amount0In, amount1In, amount0Out, amount1Out
+                    try:
+                        data_hex = log['data'].hex()
+                        # 4 params * 32 bytes = 128 bytes (256 hex chars)
+                        if len(data_hex) >= 256:
+                            # amount0Out is at [64:128], amount1Out is at [192:256] (indices in hex chars)
+                            # Actually:
+                            # 0: amount0In
+                            # 1: amount1In
+                            # 2: amount0Out
+                            # 3: amount1Out
+                            # Each is 64 hex chars
+                            
+                            chunk_size = 64
+                            amount0Out = int(data_hex[2*chunk_size:3*chunk_size], 16)
+                            amount1Out = int(data_hex[3*chunk_size:4*chunk_size], 16)
+                            
+                            # We don't know which one is WBNB without checking token0/token1 of the pair.
+                            # But usually we are selling Token -> WBNB.
+                            # So we expect one of the Outs to be significant and roughly match our expectation.
+                            # However, to be precise, we should probably rely on the fact that we sold X tokens.
+                            # Let's assume the one that is NOT the token we sold is WBNB?
+                            # Or better: check if we can match the pair address?
+                            # Too complex for now.
+                            
+                            # Alternative strategy: Look for Deposit/Withdraw on WBNB contract?
+                            # When swapping Token -> ETH, the router receives WBNB then withdraws.
+                            # So there should be a Withdrawal event from WBNB address.
+                            pass
+                    except:
+                        pass
+            
+            # Strategy 2: Check Withdrawal event from WBNB contract
+            # Withdrawal(address indexed src, uint256 wad)
+            WITHDRAWAL_TOPIC = "0x7fcf532c15f0a6db0bd6d0e038bea71d30d808c7d98cb3bf7268a95bf5081b65"
+            for log in receipt['logs']:
+                if log['address'].lower() == wbnb_addr:
+                    if len(log['topics']) > 0 and log['topics'][0].hex().lower() == WITHDRAWAL_TOPIC:
+                        # wad is in data
+                        try:
+                            val = int(log['data'].hex(), 16)
+                            total_out += val
+                        except:
+                            pass
+            
+            return total_out
+        except Exception as e:
+            logger.error(f"解析 Swap/Withdraw Log 失败: {e}")
+            return 0
+
+
+    async def _send_telegram_alert(self, message):
+        """发送 Telegram 告警"""
+        try:
+            tg_conf = self.config.get("notifications", {})
+            # Check env var for enable override? No, stick to config + env for creds
+            if not tg_conf.get("enable_telegram", False):
+                return
+            
+            token = tg_conf.get("telegram_token") or os.getenv("TELEGRAM_TOKEN")
+            chat_id = tg_conf.get("telegram_chat_id") or os.getenv("TELEGRAM_CHAT_ID")
+            
+            if not token or not chat_id:
+                return
+                
+            url = f"https://api.telegram.org/bot{token}/sendMessage"
+            payload = {
+                "chat_id": chat_id,
+                "text": message,
+                "parse_mode": "Markdown"
+            }
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, json=payload, timeout=10) as response:
+                    if response.status != 200:
+                        logger.error(f"Telegram 发送失败: {await response.text()}")
+                        
+        except Exception as e:
+            logger.error(f"Telegram 告警异常: {e}")
+
+    async def _check_slippage_alert(self, slippage_pct, token_symbol, action, tx_hash):
+        """检查滑点是否异常并发送告警"""
+        try:
+            config_slippage = float(self.config.get("trading", {}).get("slippage", 12))
+            # Rule: > Config + 5%
+            threshold = config_slippage + 5.0
+            
+            if slippage_pct > threshold:
+                msg = (
+                    f"⚠️ *滑点异常告警*\n"
+                    f"币种: `{token_symbol}`\n"
+                    f"动作: {action.upper()}\n"
+                    f"设定滑点: {config_slippage}%\n"
+                    f"实际滑点: {slippage_pct:.2f}%\n"
+                    f"阈值: {threshold}%\n"
+                    f"[查看交易](https://bscscan.com/tx/{tx_hash})"
+                )
+                logger.warning(f"触发滑点告警: {slippage_pct}% > {threshold}%")
+                asyncio.create_task(self._send_telegram_alert(msg))
+        except Exception as e:
+            logger.error(f"滑点检查失败: {e}")
+
+    async def _log_trade(self, token_addr, token_name, action, amount_token, amount_bnb, tx_hash, status, price_bnb=None, token_symbol=None, pnl_bnb=0.0, pnl_percentage=0.0,
+                         expected_amount=0.0, actual_amount=0.0, slippage_pct=0.0, slippage_bnb=0.0,
+                         gas_used=0, gas_price_gwei=0.0, gas_cost_bnb=0.0, total_cost_bnb=0.0):
         """记录交易到数据库"""
         try:
             # Try to calculate price_bnb if not provided
@@ -1034,17 +1346,31 @@ class BSCExecutor:
             # Use token_name as symbol if symbol not provided (backward compatibility)
             if token_symbol is None:
                 token_symbol = token_name
+                
+            # Ensure token_name is valid (fix for '$' or empty)
+            safe_token_name = token_name
+            if not safe_token_name or safe_token_name == '$':
+                 safe_token_name = token_symbol or token_addr[:8]
 
             async with aiosqlite.connect(self.db_path) as db:
                 # Get current timestamp
-                import datetime
                 timestamp = datetime.datetime.now().isoformat()
                 
-                # Schema: id, token_address, token_symbol, action, amount, price, tx_hash, status, timestamp, pnl_percentage, pnl_bnb
+                # Schema: id, token_address, token_name, token_symbol, action, amount, price, tx_hash, status, timestamp, pnl_percentage, pnl_bnb + slippage cols
                 await db.execute(f"""
-                    INSERT INTO {self.trades_table} (token_address, token_symbol, action, amount_token, amount_bnb, price_bnb, tx_hash, status, created_at, pnl_bnb, pnl_percentage)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (token_addr, token_symbol, action, float(amount_token), float(amount_bnb) if amount_bnb else 0.0, float(price_bnb) if price_bnb else 0.0, tx_hash, status, timestamp, pnl_bnb, pnl_percentage))
+                    INSERT INTO {self.trades_table} (
+                        token_address, token_name, token_symbol, action, amount_token, amount_bnb, price_bnb, 
+                        tx_hash, status, created_at, pnl_bnb, pnl_percentage,
+                        expected_amount, actual_amount, slippage_pct, slippage_bnb,
+                        gas_used, gas_price_gwei, gas_cost_bnb, total_cost_bnb
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    token_addr, safe_token_name, token_symbol, action, float(amount_token), float(amount_bnb) if amount_bnb else 0.0, float(price_bnb) if price_bnb else 0.0, 
+                    tx_hash, status, timestamp, pnl_bnb, pnl_percentage,
+                    float(expected_amount), float(actual_amount), float(slippage_pct), float(slippage_bnb),
+                    int(gas_used), float(gas_price_gwei), float(gas_cost_bnb), float(total_cost_bnb)
+                ))
                 await db.commit()
         except Exception as e:
             logger.error(f"数据库写入失败: {e}")

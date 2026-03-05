@@ -74,6 +74,9 @@ class PositionManager:
         self._tg_session: aiohttp.ClientSession = None  # 复用Telegram通知session
         self._pair_address_cache: Dict[str, str] = {}  # token_address -> pair_address 缓存
         
+        # Lock for duplicate sell prevention (in-memory)
+        self.selling_tokens = set()
+        
         # Track pending stop losses for "N consecutive confirmations"
         # Format: {token_address: {"count": int, "first_trigger_time": float}}
         self.pending_stop_loss = {}
@@ -593,6 +596,46 @@ class PositionManager:
             return False
 
     async def _execute_sell(self, pos: Position, percentage: float, reason: str):
+        """Wrapper for sell execution with duplicate prevention"""
+        # 1. In-memory Lock Check
+        if pos.token_address in self.selling_tokens:
+            # Special case: Rug Pull should bypass locks if possible, but concurrency might still be an issue.
+            # However, if it's stuck in "selling" state for too long, we might need to force clear it?
+            # For now, let's just log and skip. The lock is cleared in finally block.
+            logger.warning(f"{pos.token_name} 正在卖出中，跳过并发触发 (Lock Active)")
+            return False
+            
+        # 2. Database History Check (30s cool-down)
+        # Skip this check if it's a Rug Pull (emergency)
+        is_emergency = "rug" in reason.lower() or "emergency" in reason.lower()
+        
+        if is_emergency:
+            logger.warning(f"🚨 {pos.token_name} 触发紧急卖出 ({reason})，跳过冷却检查")
+        
+        if not is_emergency:
+            try:
+                trades_table = self.executor.trades_table
+                async with aiosqlite.connect(self.db_path) as db:
+                    # Only check for SUCCESSFUL or PENDING sells in the last 30s. 
+                    # If the last one FAILED, we should allow retrying immediately.
+                    cursor = await db.execute(
+                        f"SELECT COUNT(*) FROM {trades_table} WHERE token_address=? AND action='sell' AND status != 'failed' AND created_at > datetime('now', '-30 seconds')", 
+                        (pos.token_address,)
+                    )
+                    count = (await cursor.fetchone())[0]
+                    if count > 0:
+                        logger.warning(f"{pos.token_name} 30秒内已有成功卖出 ({count}次)，跳过 (非紧急情况)")
+                        return False
+            except Exception as e:
+                logger.error(f"防重复检查错误: {e}")
+
+        self.selling_tokens.add(pos.token_address)
+        try:
+            return await self._execute_sell_impl(pos, percentage, reason)
+        finally:
+            self.selling_tokens.discard(pos.token_address)
+
+    async def _execute_sell_impl(self, pos: Position, percentage: float, reason: str):
         """执行卖出逻辑 (优化版：动态滑点 + Gas竞争)"""
         # Guard: prevent double-sell from parallel tasks
         if pos.status in ("sold", "closed"):
@@ -610,6 +653,11 @@ class PositionManager:
             slippage = 18
         else:
             slippage = 25 # Low liquidity, high slippage
+            
+        # Emergency Override
+        if "rug" in reason.lower() or "emergency" in reason.lower():
+             logger.warning("🚨 紧急模式：提升滑点至 49%")
+             slippage = 49
             
         logger.info(f"当前流动性: {liquidity_bnb:.2f} BNB, 动态滑点: {slippage}%")
         

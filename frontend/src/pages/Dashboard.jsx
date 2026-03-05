@@ -65,6 +65,34 @@ const CompareCard = ({ liveStats, simStats }) => {
   );
 };
 
+const TransactionCostCard = ({ stats }) => {
+  if (!stats) return null;
+  const slippage = stats.today_slippage_bnb || 0;
+  const gas = stats.today_gas_bnb || 0;
+  const total = stats.today_tx_cost_bnb || 0;
+  
+  return (
+    <Card decoration="top" decorationColor="rose">
+      <Flex justifyContent="start" className="space-x-4">
+        <div className="p-2 bg-rose-100 rounded-full">
+          <svg xmlns="http://www.w3.org/2000/svg" className="w-6 h-6 text-rose-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+          </svg>
+        </div>
+        <div>
+          <Text>今日交易成本</Text>
+          <Metric className="text-rose-600">
+            -{formatNumber(total, 4)} BNB
+          </Metric>
+          <div className="text-xs text-gray-500 mt-1">
+            滑点: {formatNumber(slippage, 4)} | Gas: {formatNumber(gas, 4)}
+          </div>
+        </div>
+      </Flex>
+    </Card>
+  );
+};
+
 const Dashboard = () => {
   const { data: stats, loading: statsLoading } = useApi('/status', 5000);
   const { data: dailyStats, loading: chartLoading } = useApi('/stats/daily?days=7', 60000);
@@ -140,6 +168,7 @@ const Dashboard = () => {
                         </div>
                     </Flex>
                     </Card>
+                    <TransactionCostCard stats={stats} />
                 </Grid>
 
                 <Grid numItems={1} className="gap-6">
@@ -203,15 +232,15 @@ const Dashboard = () => {
                                             simData.analysis.action === 'switch_to_live' ? '建议实盘' : 
                                             simData.analysis.action === 'warning' ? '警告' : '继续观察'
                                         }</Title>
-                                        <Text className="mt-2 text-slate-300">{simData.analysis.message}</Text>
+                                        <Text className="mt-2 text-gray-600">{simData.analysis.message}</Text>
                                         
                                         {simData.analysis.suggestions && simData.analysis.suggestions.length > 0 && (
-                                            <div className="mt-4 bg-slate-800 p-4 rounded-lg">
-                                                <Text className="font-bold mb-2">优化建议:</Text>
+                                            <div className="mt-4 bg-gray-50 p-4 rounded-lg border border-gray-100">
+                                                <Text className="font-bold mb-2 text-gray-900">优化建议:</Text>
                                                 <List>
                                                     {simData.analysis.suggestions.map((s, idx) => (
                                                         <ListItem key={idx}>
-                                                            <span>• {s}</span>
+                                                            <span className="text-gray-700">• {s}</span>
                                                         </ListItem>
                                                     ))}
                                                 </List>

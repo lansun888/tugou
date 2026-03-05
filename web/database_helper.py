@@ -198,6 +198,14 @@ class DatabaseHelper:
                         "trade_type": trade_type,
                         "close_reason": close_reason,
                         "status": item.get("status"),
+                        "expected_amount": to_float(item.get("expected_amount")),
+                        "actual_amount": to_float(item.get("actual_amount")),
+                        "slippage_pct": to_float(item.get("slippage_pct")),
+                        "slippage_bnb": to_float(item.get("slippage_bnb")),
+                        "gas_used": int(item.get("gas_used") or 0),
+                        "gas_price_gwei": to_float(item.get("gas_price_gwei")),
+                        "gas_cost_bnb": to_float(item.get("gas_cost_bnb")),
+                        "total_cost_bnb": to_float(item.get("total_cost_bnb")),
                         "_ts": ts
                     })
 
@@ -364,11 +372,14 @@ class DatabaseHelper:
                 SUM(CASE WHEN action='buy' AND status='success' THEN 1 ELSE 0 END) as buy_count,
                 SUM(CASE WHEN action='sell' AND status='success' AND pnl_bnb > 0 THEN 1 ELSE 0 END) as win_count,
                 SUM(CASE WHEN action='sell' AND status='success' AND pnl_bnb <= 0 THEN 1 ELSE 0 END) as loss_count,
-                SUM(CASE WHEN pnl_bnb IS NOT NULL THEN pnl_bnb ELSE 0 END) as total_pnl_bnb,
+                (SUM(CASE WHEN action='sell' AND status='success' THEN amount_bnb ELSE 0 END) - SUM(CASE WHEN action='buy' AND status='success' THEN amount_bnb ELSE 0 END)) as total_pnl_bnb,
                 SUM(CASE WHEN pnl_bnb > 0 THEN pnl_bnb ELSE 0 END) as profit_bnb,
                 SUM(CASE WHEN pnl_bnb < 0 THEN ABS(pnl_bnb) ELSE 0 END) as loss_bnb,
                 SUM(CASE WHEN action='sell' AND status='success' THEN amount_bnb ELSE 0 END) as total_sell_bnb,
-                SUM(CASE WHEN action='buy' AND status='success' THEN amount_bnb ELSE 0 END) as total_buy_bnb
+                SUM(CASE WHEN action='buy' AND status='success' THEN amount_bnb ELSE 0 END) as total_buy_bnb,
+                SUM(slippage_bnb) as total_slippage_bnb,
+                SUM(gas_cost_bnb) as total_gas_cost_bnb,
+                SUM(total_cost_bnb) as total_tx_cost_bnb
             FROM {trades_table}
             WHERE {time_col} >= ?
             GROUP BY day

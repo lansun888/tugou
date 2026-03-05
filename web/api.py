@@ -113,7 +113,10 @@ async def get_status():
             "active_positions": 0,
             "today_profit_bnb": 0.0,
             "today_trades": 0,
-            "win_rate": 0.0
+            "win_rate": 0.0,
+            "today_slippage_bnb": 0.0,
+            "today_gas_bnb": 0.0,
+            "today_tx_cost_bnb": 0.0
         }
         
         if bot.position_manager:
@@ -140,6 +143,9 @@ async def get_status():
             stats['today_profit_bnb'] = today_stats.get('total_pnl_bnb', 0.0)
             stats['today_buy_bnb'] = today_stats.get('total_buy_bnb', 0.0)
             stats['today_sell_bnb'] = today_stats.get('total_sell_bnb', 0.0)
+            stats['today_slippage_bnb'] = today_stats.get('total_slippage_bnb', 0.0)
+            stats['today_gas_bnb'] = today_stats.get('total_gas_cost_bnb', 0.0)
+            stats['today_tx_cost_bnb'] = today_stats.get('total_tx_cost_bnb', 0.0)
             sell_count = today_stats.get('sell_count', 0)
             win_count = today_stats.get('win_count', 0)
             loss_count = today_stats.get('loss_count', 0)
