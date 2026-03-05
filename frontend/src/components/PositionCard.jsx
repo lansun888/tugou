@@ -26,10 +26,24 @@ const formatHoldDuration = (buyTime) => {
 // 取代币名/符号的首个 ASCII 大写字母，避免中文字符撑破圆形头像
 const getTokenInitial = (symbol, name) => {
   const str = symbol || name || '';
-  for (const ch of str) {
-    if (/[A-Za-z0-9]/.test(ch)) return ch.toUpperCase();
+  
+  // FIX: Remove Emojis (Expanded range)
+  const cleaned = str.replace(
+    /([\u2700-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF])/g, 
+    ''
+  ).trim();
+  
+  // Use first valid char
+  if (cleaned.length > 0) {
+      // Find first alphanumeric or CJK
+      for (const ch of cleaned) {
+          if (/[A-Za-z0-9\u4e00-\u9fa5]/.test(ch)) return ch.toUpperCase();
+      }
+      return cleaned.charAt(0).toUpperCase();
   }
-  return '?';
+  
+  // Fallback to raw first char if everything was stripped
+  return str.charAt(0);
 };
 
 // 可内联编辑的价格组件
@@ -86,6 +100,7 @@ const EditablePrice = ({ value, fieldName, tokenAddress, color = 'text-slate-300
 };
 
 const PositionCard = ({ pos, onSell }) => {
+  const [imageError, setImageError] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
 
   const handleCopy = (e) => {
@@ -96,27 +111,123 @@ const PositionCard = ({ pos, onSell }) => {
       setTimeout(() => setIsCopied(false), 2000);
     }
   };
+  
+  // FIX: Recalculate PnL and Values dynamically based on current price
+  // This ensures frontend is always consistent even if backend pnl_percentage is stale
+  const currentPrice = pos.current_price_bnb || 0;
+  const buyPrice = pos.buy_price_bnb || 0;
+  
+  // PnL Percentage = (Current - Buy) / Buy * 100
+  // Handle division by zero
+  let pnlPercentage = 0;
+  if (buyPrice > 0 && currentPrice > 0) {
+      pnlPercentage = ((currentPrice - buyPrice) / buyPrice) * 100;
+  } else {
+      // Fallback to backend value if prices are missing
+      pnlPercentage = pos.pnl_percentage || 0;
+  }
 
-  const isProfitable = (pos.pnl_percentage || 0) >= 0;
-  const isSuperProfitable = (pos.pnl_percentage || 0) >= 100;
-  const isLoss = (pos.pnl_percentage || 0) < 0;
+  // Invested Amount (Use backend value, but fallback to calculation if needed)
+  const investedBnb = pos.invested_bnb || 0;
+  
+  // Current Value = Invested * (1 + PnL/100)
+  // Or simply: Amount * CurrentPrice (if we had amount)
+  // We can derive Amount = Invested / BuyPrice
+  let currentValueBnb = pos.current_value_bnb || 0;
+  if (investedBnb > 0 && buyPrice > 0) {
+      const amount = investedBnb / buyPrice;
+      currentValueBnb = amount * currentPrice;
+  }
+  
+  // Net PnL = Current Value - Invested Value
+  const netPnlBnb = currentValueBnb - investedBnb;
 
-  // 距止损百分比：(现价-止损价)/现价*100
-  // 正值 = 现价高于止损（安全），负值 = 现价低于止损（追踪止损已上调）
-  const rawDist = pos.stop_loss_price && pos.current_price_bnb
-    ? ((pos.current_price_bnb - pos.stop_loss_price) / pos.current_price_bnb) * 100
-    : 100;
-  // 追踪止损上调：现价低于止损价（止损保护盈利，不等于亏损）
-  const stopAboveCurrent = rawDist < 0;
-  // 接近止损：距离 < 10%
-  const isNearStopLoss = rawDist >= 0 && rawDist < 10;
-  // 进度条值：止损上调时显示 100% 满格 danger，正常时按距离显示
-  const progressValue = stopAboveCurrent ? 100 : Math.min(rawDist, 100);
+  const isProfitable = pnlPercentage >= 0;
+  const isSuperProfitable = pnlPercentage >= 100;
+  const isLoss = pnlPercentage < 0;
 
-  // 卡片边框：仅真实亏损(pnl<0)时红色，止损上调时琥珀，接近止损时动画琥珀
+  // Logic: Stop Loss & Target Price Range
+  const stopLossPrice = pos.stop_loss_price || 0;
+  
+  // FIX: Dynamic Target Price Logic (Next Take Profit Level)
+  // level1: buy * 2 (+100%)
+  // level2: buy * 3 (+200%)
+  // level3: buy * 5 (+400%)
+  // level4: buy * 10 (+900%)
+  
+  const getNextTarget = () => {
+      // Dynamic logic as primary for "Target Price" display.
+      // Even if backend has a target_price, we want to show the next dynamic level if user hasn't manually overridden it?
+      // Actually, pos.target_price usually comes from config (initial) or manual update.
+      // If we want "Dynamic Update", we should probably ignore the static pos.target_price unless it's a manual override.
+      // However, distinguishing manual override vs initial config is hard here without extra flags.
+      // User request implies: "目标价显示逻辑...应该显示还未触发的下一档止盈价格"
+      // So we will prioritize the dynamic calculation.
+      
+      if (!buyPrice || buyPrice <= 0) return { price: pos.target_price || 0, label: '' };
+      
+      const levels = [2, 3, 5, 10];
+      for (const multiplier of levels) {
+          const t = buyPrice * multiplier;
+          // Use > (greater than) to find the next target
+          // Also check if current target is "close enough" to consider it "next"? 
+          // No, user said: if current > target, show next.
+          if (t > currentPrice) {
+              return { price: t, label: `${multiplier}x目标` };
+          }
+      }
+      // Fallback: 10x (or maybe >10x if price is huge?)
+      return { price: buyPrice * 10, label: '10x目标' };
+  };
+
+  const { price: targetPrice, label: targetLabel } = getNextTarget();
+  
+  // 1. Status based on distance from SL
+  let rawDist = 0; // % distance from SL
+  if (stopLossPrice > 0 && currentPrice > 0) {
+      rawDist = ((currentPrice - stopLossPrice) / stopLossPrice) * 100;
+  }
+  
+  let statusText = '安全';
+  let progressColor = 'emerald';
+  let isNearStopLoss = false;
+  let stopTriggered = rawDist <= 0;
+
+  if (stopTriggered) {
+      statusText = '触发止损';
+      progressColor = 'rose';
+      isNearStopLoss = true;
+  } else if (rawDist < 10) {
+      statusText = '危险';
+      progressColor = 'rose';
+      isNearStopLoss = true;
+  } else if (rawDist < 20) {
+      statusText = '注意';
+      progressColor = 'yellow';
+  } else {
+      statusText = '安全';
+      progressColor = 'emerald';
+  }
+
+  // 2. Progress Bar Value (SL -> TP Range)
+  // 0% = SL, 100% = TP
+  let progressValue = 0;
+  if (stopLossPrice > 0 && targetPrice > stopLossPrice) {
+      const totalRange = targetPrice - stopLossPrice;
+      const currentPos = currentPrice - stopLossPrice;
+      progressValue = (currentPos / totalRange) * 100;
+  } else {
+      // Fallback if no TP: use rawDist capped
+      progressValue = Math.max(0, Math.min(rawDist, 100));
+  }
+  
+  // Clamp 0-100
+  progressValue = Math.max(0, Math.min(progressValue, 100));
+
+  // 卡片边框
   let borderColorClass = "ring-slate-800";
   if (isLoss) borderColorClass = "ring-rose-900/50";
-  else if (stopAboveCurrent || isNearStopLoss) borderColorClass = "ring-amber-500/40 animate-pulse";
+  else if (stopTriggered || isNearStopLoss) borderColorClass = "ring-amber-500/40 animate-pulse";
 
   const soldPercent = pos.sold_percentage || 0;
   let soldBadge = null;
@@ -126,14 +237,66 @@ const PositionCard = ({ pos, onSell }) => {
 
   // 代币头像：取第一个 ASCII 字符，跳过中文避免样式混乱
   const tokenInitial = getTokenInitial(pos.token_symbol, pos.token_name);
+  
+  // Hash for background color
+  const getAvatarColor = (name) => {
+      let hash = 0;
+      const str = name || 'default';
+      for (let i = 0; i < str.length; i++) {
+          hash = str.charCodeAt(i) + ((hash << 5) - hash);
+      }
+      const colors = ['bg-blue-600', 'bg-indigo-600', 'bg-purple-600', 'bg-pink-600', 'bg-rose-600', 'bg-orange-600', 'bg-amber-600', 'bg-emerald-600', 'bg-teal-600', 'bg-cyan-600'];
+      return colors[Math.abs(hash) % colors.length];
+  };
+  const avatarBg = getAvatarColor(pos.token_symbol || pos.token_name);
+
+  // Helper for DexScreener data
+  const formatDexData = (val, isCurrency = true) => {
+      if (val === undefined || val === null || val === 0) return <span className="text-gray-600">-- <span className="text-[10px] opacity-60">(离线)</span></span>;
+      if (isCurrency) return `$${val.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+      return val.toFixed(2) + '%';
+  };
+  
+  const formatDexPair = (buy, sell) => {
+      if ((!buy && !sell) || (buy === 0 && sell === 0)) return <span className="text-gray-600">--/--</span>;
+      return (
+          <div className="flex gap-1">
+              <span className="text-emerald-400">{buy}</span>
+              <span>/</span>
+              <span className="text-rose-400">{sell}</span>
+          </div>
+      );
+  };
+
+  // Helper for Net PnL formatting
+  const formatPnl = (bnb_amount) => {
+    if (Math.abs(bnb_amount) < 0.0001) {
+        return '+0.0000';
+    }
+    if (Math.abs(bnb_amount) < 0.01) {
+        return (bnb_amount > 0 ? '+' : '') + bnb_amount.toFixed(6);
+    }
+    return (bnb_amount > 0 ? '+' : '') + bnb_amount.toFixed(4);
+  };
 
   return (
     <Card className={`bg-slate-900 ring-1 ${borderColorClass} transition-all hover:ring-slate-700`}>
       {/* Header */}
       <Flex className="mb-4 border-b border-slate-800 pb-3">
         <div className="flex items-center gap-3">
-          <div className="bg-slate-700 w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold text-slate-200 flex-shrink-0">
-            {tokenInitial}
+          <div className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold text-slate-200 flex-shrink-0 overflow-hidden ${avatarBg}`}>
+             {imageError ? (
+               <span className="token-initial">
+                 {tokenInitial}
+               </span>
+             ) : (
+               <img 
+                 src={pos.token_icon_url || ''} 
+                 alt={tokenInitial}
+                 className="w-full h-full object-cover"
+                 onError={() => setImageError(true)} 
+               />
+             )}
           </div>
           <div>
             <Text className="text-white font-bold text-lg flex items-center gap-2">
@@ -173,16 +336,16 @@ const PositionCard = ({ pos, onSell }) => {
       <div className="grid grid-cols-3 gap-2 mb-4 text-center border-b border-slate-800 pb-4">
         <div className="border-r border-slate-800 pr-2">
           <Text className="text-slate-500 text-xs mb-1">买入价</Text>
-          <Text className="text-slate-300 font-mono text-sm">{formatPrice(pos.buy_price_bnb)}</Text>
+          <Text className="text-slate-300 font-mono text-sm">{formatPrice(buyPrice)}</Text>
         </div>
         <div className="border-r border-slate-800 px-2">
           <Text className="text-slate-500 text-xs mb-1">现价</Text>
-          <Text className="text-white font-mono text-sm font-medium">{formatPrice(pos.current_price_bnb)}</Text>
+          <Text className="text-white font-mono text-sm font-medium">{formatPrice(currentPrice)}</Text>
         </div>
         <div className="pl-2">
           <Text className="text-slate-500 text-xs mb-1">盈亏</Text>
           <Text className={`font-mono text-sm font-bold ${isProfitable ? 'text-emerald-400' : 'text-rose-400'}`}>
-            {isProfitable ? '+' : ''}{(pos.pnl_percentage || 0).toFixed(1)}%
+            {isProfitable ? '+' : ''}{pnlPercentage.toFixed(1)}%
           </Text>
         </div>
       </div>
@@ -192,27 +355,23 @@ const PositionCard = ({ pos, onSell }) => {
         <div className="flex flex-col gap-1">
           <div className="flex justify-between text-slate-500">
             <span>24h Vol</span>
-            <span className="text-slate-300">${(pos.volume_24h || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+            <span className="text-slate-300">{formatDexData(pos.volume_24h, true)}</span>
           </div>
           <div className="flex justify-between text-slate-500">
             <span>Mkt Cap</span>
-            <span className="text-slate-300">${(pos.market_cap || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+            <span className="text-slate-300">{formatDexData(pos.market_cap, true)}</span>
           </div>
         </div>
         <div className="flex flex-col gap-1 border-l border-slate-800 pl-2">
           <div className="flex justify-between text-slate-500">
             <span>5m Chg</span>
             <span className={(pos.price_change_5m || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}>
-              {(pos.price_change_5m || 0) >= 0 ? '+' : ''}{(pos.price_change_5m || 0).toFixed(2)}%
+              {(pos.price_change_5m || 0) >= 0 ? '+' : ''}{formatDexData(pos.price_change_5m, false)}
             </span>
           </div>
           <div className="flex justify-between text-slate-500">
             <span>B/S (5m)</span>
-            <div className="flex gap-1">
-              <span className="text-emerald-400">{pos.txns_5m_buys || 0}</span>
-              <span>/</span>
-              <span className="text-rose-400">{pos.txns_5m_sells || 0}</span>
-            </div>
+            {formatDexPair(pos.txns_5m_buys, pos.txns_5m_sells)}
           </div>
         </div>
       </div>
@@ -221,16 +380,16 @@ const PositionCard = ({ pos, onSell }) => {
       <Flex className="mb-4 bg-slate-950/50 p-3 rounded-lg flex-wrap gap-y-2">
         <div className="text-center w-1/3 border-r border-slate-800/50">
           <Text className="text-slate-500 text-xs">投资额</Text>
-          <Text className="text-slate-300 font-mono text-sm">{(pos.invested_bnb || 0).toFixed(4)}</Text>
+          <Text className="text-slate-300 font-mono text-sm">{investedBnb.toFixed(4)}</Text>
         </div>
         <div className="text-center w-1/3 border-r border-slate-800/50">
           <Text className="text-slate-500 text-xs">价值</Text>
-          <Text className="text-white font-mono text-sm">{(pos.current_value_bnb || 0).toFixed(4)}</Text>
+          <Text className="text-white font-mono text-sm">{currentValueBnb.toFixed(4)}</Text>
         </div>
         <div className="text-center w-1/3">
           <Text className="text-slate-500 text-xs">净盈亏</Text>
           <Text className={`font-mono text-sm ${isProfitable ? 'text-emerald-400' : 'text-rose-400'}`}>
-            {isProfitable ? '+' : '-'}{formatPrice(Math.abs(pos.pnl_bnb || 0))}
+            {formatPnl(netPnlBnb)}
           </Text>
         </div>
 
@@ -240,7 +399,7 @@ const PositionCard = ({ pos, onSell }) => {
               <DollarSign className="w-3 h-3" /> 已实现盈亏
             </Text>
             <Text className={`font-mono text-sm ${pos.realized_pnl_bnb >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-              {pos.realized_pnl_bnb >= 0 ? '+' : '-'}{formatPrice(Math.abs(pos.realized_pnl_bnb))}
+              {formatPnl(pos.realized_pnl_bnb)}
             </Text>
           </div>
         ) : null}
@@ -260,30 +419,28 @@ const PositionCard = ({ pos, onSell }) => {
           />
         </Flex>
 
-        {/* 进度条：正常时绿→橙渐变表示接近程度；止损上调时固定满格红色警示 */}
+        {/* 进度条：显示当前价在 [止损价, 目标价] 区间的位置 */}
         <ProgressBar
           value={progressValue}
-          color={stopAboveCurrent ? 'rose' : rawDist < 20 ? 'orange' : 'emerald'}
+          color={progressColor}
           className="mt-1 h-1.5"
         />
         <div className="flex justify-between text-[10px] mt-0.5">
-          <span className="text-slate-600">止损线</span>
-          {stopAboveCurrent ? (
-            <span className="text-amber-400">追踪止损触发中 (低于止损 {Math.abs(rawDist).toFixed(1)}%)</span>
-          ) : (
-            <span className={rawDist < 10 ? 'text-rose-500' : 'text-slate-500'}>
-              距止损 {rawDist.toFixed(1)}%
-            </span>
-          )}
-          <span className="text-slate-600">现价</span>
+          <span className="text-slate-600">止损</span>
+          
+          <span className={`font-bold ${progressColor === 'rose' ? 'text-rose-500 animate-pulse' : progressColor === 'yellow' ? 'text-yellow-500' : 'text-emerald-500'}`}>
+            {statusText} (距止损 {rawDist.toFixed(1)}%)
+          </span>
+
+          <span className="text-slate-600">目标</span>
         </div>
 
         <Flex className="mt-1">
           <Text className="text-slate-500 text-xs flex items-center gap-1">
-            <Rocket className="w-3 h-3" /> 目标价
+            <Rocket className="w-3 h-3" /> 目标价 {targetLabel && <span className="text-[10px] text-slate-500 ml-1">({targetLabel})</span>}
           </Text>
           <EditablePrice
-            value={pos.target_price}
+            value={targetPrice}
             fieldName="target_price"
             tokenAddress={pos.token_address}
             color="text-emerald-400"

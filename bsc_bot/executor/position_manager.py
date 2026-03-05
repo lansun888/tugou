@@ -605,26 +605,26 @@ class PositionManager:
             logger.warning(f"{pos.token_name} 正在卖出中，跳过并发触发 (Lock Active)")
             return False
             
-        # 2. Database History Check (30s cool-down)
-        # Skip this check if it's a Rug Pull (emergency)
-        is_emergency = "rug" in reason.lower() or "emergency" in reason.lower()
+        # 2. Database History Check (5s cool-down)
+        # Skip this check if it's a Rug Pull (emergency) OR Manual Sell
+        is_emergency = "rug" in reason.lower() or "emergency" in reason.lower() or "manual" in reason.lower()
         
         if is_emergency:
-            logger.warning(f"🚨 {pos.token_name} 触发紧急卖出 ({reason})，跳过冷却检查")
+            logger.warning(f"🚨 {pos.token_name} 触发紧急/手动卖出 ({reason})，跳过冷却检查")
         
         if not is_emergency:
             try:
                 trades_table = self.executor.trades_table
                 async with aiosqlite.connect(self.db_path) as db:
-                    # Only check for SUCCESSFUL or PENDING sells in the last 30s. 
+                    # Only check for SUCCESSFUL or PENDING sells in the last 5s. 
                     # If the last one FAILED, we should allow retrying immediately.
                     cursor = await db.execute(
-                        f"SELECT COUNT(*) FROM {trades_table} WHERE token_address=? AND action='sell' AND status != 'failed' AND created_at > datetime('now', '-30 seconds')", 
+                        f"SELECT COUNT(*) FROM {trades_table} WHERE token_address=? AND action='sell' AND status != 'failed' AND created_at > datetime('now', '-5 seconds')", 
                         (pos.token_address,)
                     )
                     count = (await cursor.fetchone())[0]
                     if count > 0:
-                        logger.warning(f"{pos.token_name} 30秒内已有成功卖出 ({count}次)，跳过 (非紧急情况)")
+                        logger.warning(f"{pos.token_name} 5秒内已有成功卖出 ({count}次)，跳过 (非紧急情况)")
                         return False
             except Exception as e:
                 logger.error(f"防重复检查错误: {e}")

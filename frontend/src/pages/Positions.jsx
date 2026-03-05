@@ -60,7 +60,24 @@ const Positions = () => {
 
   const calculateSummary = (posList) => {
     const totalInvested = posList.reduce((acc, curr) => acc + (curr.invested_bnb || 0), 0);
-    const currentValue = posList.reduce((acc, curr) => acc + (curr.current_value_bnb || 0), 0);
+    
+    // FIX: Calculate Current Value and PnL dynamically based on current price
+    // This aligns with PositionCard logic and prevents discrepancies
+    const currentValue = posList.reduce((acc, curr) => {
+        // Same logic as PositionCard
+        const buyPrice = curr.buy_price_bnb || 0;
+        const currentPrice = curr.current_price_bnb || 0;
+        const invested = curr.invested_bnb || 0;
+        
+        if (invested > 0 && buyPrice > 0 && currentPrice > 0) {
+            const amount = invested / buyPrice;
+            return acc + (amount * currentPrice);
+        } else {
+            // Fallback to backend value
+            return acc + (curr.current_value_bnb || 0);
+        }
+    }, 0);
+
     const totalPnL = currentValue - totalInvested;
     const totalPnLPercent = totalInvested > 0 ? (totalPnL / totalInvested) * 100 : 0;
 

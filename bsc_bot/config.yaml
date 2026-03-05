@@ -77,7 +77,7 @@ position_management:
       - -999
       - 100
   trailing_stop:
-    initial_stop_loss: 200
+    initial_stop_loss: 50
     levels:
     - - 2
       - 50

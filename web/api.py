@@ -221,25 +221,55 @@ def _build_positions_list():
 
             if bot.config:
                 ts_cfg = bot.config.get("position_management", {}).get("trailing_stop", {})
-                initial_sl = ts_cfg.get("initial_stop_loss", -50)
-                stop_loss_price = pos.buy_price_bnb * (1 + initial_sl/100)
+                initial_sl = ts_cfg.get("initial_stop_loss", 50) # Default 50%
+                
+                # FIX: Stop Loss Logic (User Request: 1 - pct/100)
+                # Ensure initial_sl is treated as a percentage DROP
+                # If config has -50, abs(-50) = 50. If 50, abs(50) = 50.
+                sl_pct = abs(float(initial_sl))
+                # Guard against invalid config (>100%)
+                if sl_pct >= 100:
+                    logger.error(f"Configured Stop Loss % ({sl_pct}) is >= 100. Capping at 99%.")
+                    sl_pct = 99.0
+                
+                stop_loss_price = pos.buy_price_bnb * (1 - sl_pct/100)
+                
+                # Double guard for negative price
+                if stop_loss_price <= 0:
+                    logger.error(f"Calculated negative Stop Loss: {stop_loss_price}. Resetting to 50% drop.")
+                    stop_loss_price = pos.buy_price_bnb * 0.5
 
+                # FIX: Target Price Logic (User Request: Multiplier)
+                tp_cfg = bot.config.get("position_management", {}).get("take_profit", {})
+                # Try to get multiplier from levels or default to 2x
+                # If levels are [[100, 25], ...], first TP is +100% (2x)
+                tp_levels = tp_cfg.get("levels", [])
+                if tp_levels and len(tp_levels) > 0:
+                    # Sort by percentage
+                    sorted_levels = sorted(tp_levels, key=lambda x: x[0])
+                    first_tp_pct = sorted_levels[0][0] # e.g. 100
+                    # Target price = Buy Price * (1 + pct/100)
+                    # e.g. 100% profit = 2x price
+                    target_price = pos.buy_price_bnb * (1 + first_tp_pct/100)
+                else:
+                    # Fallback to hardcoded multiplier if no levels
+                    target_price = pos.buy_price_bnb * 2.0
+
+                # Validate: SL < Buy < TP
+                if stop_loss_price >= pos.buy_price_bnb:
+                    logger.error(f"Stop Loss Logic Error: SL ({stop_loss_price}) >= Buy ({pos.buy_price_bnb}). Fixing to 50%.")
+                    stop_loss_price = pos.buy_price_bnb * 0.5
+                
+                if target_price <= pos.buy_price_bnb:
+                    logger.error(f"Target Price Logic Error: TP ({target_price}) <= Buy ({pos.buy_price_bnb}). Fixing to 2x.")
+                    target_price = pos.buy_price_bnb * 2.0
+
+                # Pullback override (only if price went much higher)
                 if pos.highest_price > pos.buy_price_bnb * 1.5:
                     pullback = ts_cfg.get("pullback_threshold", 40)
-                    stop_loss_price = max(stop_loss_price, pos.highest_price * (1 - pullback/100))
-
-                # Target: next take-profit level above current price (not stale initial 2x)
-                tp_levels = bot.config.get("position_management", {}).get("take_profit", {}).get("levels", [])
-                if tp_levels and pos.buy_price_bnb > 0:
-                    current_price_now = pos.current_price or 0
-                    next_tp = None
-                    for pnl_pct, _ in sorted(tp_levels, key=lambda x: x[0]):
-                        candidate = pos.buy_price_bnb * (1 + pnl_pct / 100)
-                        if candidate > current_price_now:
-                            next_tp = candidate
-                            break
-                    if next_tp:
-                        target_price = next_tp
+                    # High water mark stop
+                    dynamic_sl = pos.highest_price * (1 - pullback/100)
+                    stop_loss_price = max(stop_loss_price, dynamic_sl)
 
             # Manual overrides (set via PATCH /api/positions/{addr})
             if getattr(pos, 'manual_stop_loss', None) is not None:
