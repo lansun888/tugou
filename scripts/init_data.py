@@ -91,7 +91,9 @@ async def init_data(reset=False, no_seed=False, db_path=DEFAULT_DB_PATH):
                 highest_price REAL,
                 sold_portions TEXT,
                 status TEXT,
-                buy_gas_price INTEGER DEFAULT 0
+                buy_gas_price INTEGER DEFAULT 0,
+                current_price REAL DEFAULT 0,
+                pnl_percentage REAL DEFAULT 0
             )
         """)
 
@@ -180,15 +182,20 @@ async def init_data(reset=False, no_seed=False, db_path=DEFAULT_DB_PATH):
         for idx in active_indices:
             token = tokens[idx]
             buy_price = 0.0001
+            current_price = buy_price * 1.1
+            pnl_pct = 10.0
+            
             await db.execute("""
                 INSERT OR REPLACE INTO simulation_positions (
                     token_address, token_name, buy_price_bnb, buy_amount_bnb, 
-                    token_amount, buy_time, highest_price, sold_portions, status
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    token_amount, buy_time, highest_price, sold_portions, status,
+                    current_price, pnl_percentage
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 token["address"], token["name"], buy_price, 0.1, 1000, 
                 (datetime.now() - timedelta(minutes=30)).timestamp(), 
-                buy_price * 1.2, "[]", "active"
+                buy_price * 1.2, "[]", "active",
+                current_price, pnl_pct
             ))
 
         # Seed Trades (History)
