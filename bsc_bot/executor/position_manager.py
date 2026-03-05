@@ -871,6 +871,17 @@ class PositionManager:
 
     def _log_dashboard(self):
         """打印仓位统计面板"""
+        # Recalculate net_pnl: Only from realized trades (sell_count logic or explicit sum)
+        # self.daily_stats['profit_bnb'] and ['loss_bnb'] are updated only on SELL in _update_daily_stats
+        # So net_pnl here IS realized PnL.
+        # But user reported issue: "买入0.8，卖出0.9216，显示+0.3433"
+        # This implies +0.3433 = 0.1216 (Realized) + 0.2217 (Unrealized?)
+        # Let's check _update_daily_stats logic.
+        # _update_daily_stats is called with (buy=True) or (buy=False, profit=x, loss=y)
+        # It seems correct for "Realized" only.
+        # However, the user might be referring to the "Today's PnL" in the DASHBOARD API response, not this log.
+        # The Dashboard API usually queries DB. Let's check `api_server.py` or wherever `/api/status` is handled.
+        
         net_pnl = self.daily_stats["profit_bnb"] - self.daily_stats["loss_bnb"]
         
         lines = []

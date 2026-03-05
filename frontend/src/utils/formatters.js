@@ -21,16 +21,29 @@ export const formatPercent = (value) => {
   return `${sign}${num.toFixed(2)}%`;
 };
 
-export const formatPrice = (value) => {
-  if (value === undefined || value === null) return '--';
-  const num = Number(value);
-  if (isNaN(num)) return '--';
-  if (num === 0) return '0.00';
-  if (num < 0.0000001) return num.toExponential(4);
-  if (num < 0.001) return num.toFixed(8);
-  if (num < 1) return num.toFixed(6);
-  if (num < 1000) return num.toFixed(4);
-  return num.toFixed(2);
+export const formatPrice = (price) => {
+  if (!price || price === 0) return '0.00000000';
+  
+  const num = Number(price);
+  if (isNaN(num)) return '0.00000000';
+
+  // 统一显示8位有效小数，去掉末尾多余的0 
+  if (num < 0.00000001) return num.toExponential(4);  // 极小值才用科学计数 
+  
+  // 找到第一个非零位，然后保留后面6位有效数字 
+  const str = num.toFixed(12);
+  const match = str.match(/0\.(0*)([1-9].{0,7})/);
+  
+  if (match) { 
+    const zeros = match[1];
+    // match[2] is the significant part starting with non-zero.
+    // User wants "保留后面6位有效数字" (keep 6 significant digits).
+    const significant = match[2].slice(0, 6);
+    return '0.' + zeros + significant;
+  } 
+  
+  // Fallback
+  return num.toFixed(8).replace(/\.?0+$/, '');
 };
 
 // 日期格式化

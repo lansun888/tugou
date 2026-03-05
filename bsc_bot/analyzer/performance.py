@@ -124,7 +124,9 @@ class PerformanceAnalyzer:
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
             
-            # 1. Get Trades & PnL
+            # 1. Get Trades & PnL (Only fully closed trades or explicit sold portions)
+            # Filter logic: We only care about realized PnL from sold portions.
+            # If a position is still active (no sold portions), it contributes 0 to realized PnL.
             async with db.execute("SELECT * FROM positions WHERE sold_portions IS NOT NULL AND sold_portions != '[]'") as cursor:
                 rows = await cursor.fetchall()
                 
