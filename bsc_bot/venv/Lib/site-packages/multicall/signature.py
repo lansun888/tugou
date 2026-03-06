@@ -1,0 +1,130 @@
+from typing import Any, Final, final
+
+import eth_hash.auto
+import faster_eth_abi.abi
+import faster_eth_abi.decoding
+import faster_eth_abi.encoding
+from eth_typing import Decodable, TypeStr
+
+_SIGNATURES: Final[dict[str, "Signature"]] = {}
+
+TupleEncoder: Final = faster_eth_abi.encoding.TupleEncoder
+TupleDecoder: Final = faster_eth_abi.decoding.TupleDecoder
+
+_keccak: Final = eth_hash.auto.keccak
+_get_encoder: Final = faster_eth_abi.abi.default_codec._registry.get_encoder
+_get_decoder: Final = faster_eth_abi.abi.default_codec._registry.get_decoder
+_stream_cls: Final = faster_eth_abi.abi.default_codec.stream_class
+
+
+def get_4byte_selector(signature: str) -> bytes:
+    return _keccak(signature.replace(" ", "").encode("utf-8"))[:4]
+
+
+def parse_signature(signature: str) -> tuple[str, list[TypeStr], list[TypeStr]]:
+    """
+    Breaks a function signature into its selector and lists of input and output ABI types.
+
+    This function expects a signature of the form:
+        "functionName(inputType1,inputType2,...)(outputType1,outputType2,...)"
+
+    It returns a tuple with three elements:
+      - The function selector which is formed by joining the function name with the first
+        parenthesized group of input types. For example, for the signature "foo(address)(uint256)",
+        the selector is "foo(address)".
+      - A list of input type strings.
+      - A list of output type strings.
+
+    Examples:
+        >>> parse_signature("foo(address)(uint256)")
+        ('foo(address)', ['address'], ['uint256'])
+        >>> parse_signature("bar(uint256,uint256)(bool)")
+        ('bar(uint256,uint256)', ['uint256', 'uint256'], ['bool'])
+
+    See Also:
+        :func:`eth_utils.function_signature_to_4byte_selector`
+    """
+    parts: list[str] = []
+    stack: list[str] = []
+    start: int = 0
+    for end, character in enumerate(signature):
+        if character == "(":
+            stack.append(character)
+            if not parts:
+                parts.append(signature[start:end])
+                start = end
+        if character == ")":
+            stack.pop()
+            if not stack:  # we are only interested in outermost groups
+                parts.append(signature[start : end + 1])
+                start = end + 1
+    function = "".join(parts[:2])
+    input_types = parse_typestring(parts[1])
+    output_types = parse_typestring(parts[2])
+    return function, input_types, output_types
+
+
+def parse_typestring(typestring: str) -> list[TypeStr]:
+    if typestring == "()":
+        return []
+    parts = []
+    part = ""
+    inside_tuples = 0
+    for character in typestring[1:-1]:
+        if character == "(":
+            inside_tuples += 1
+        elif character == ")":
+            inside_tuples -= 1
+        elif character == "," and inside_tuples == 0:
+            parts.append(part)
+            part = ""
+            continue
+        part += character
+    parts.append(part)
+    return parts
+
+
+def _get_signature(signature: str) -> "Signature":
+    try:
+        return _SIGNATURES[signature]
+    except KeyError:
+        instance = Signature(signature)
+        _SIGNATURES[signature] = instance
+        return instance
+
+
+@final
+class Signature:
+    __slots__ = (
+        "signature",
+        "function",
+        "input_types",
+        "output_types",
+        "fourbyte",
+        "_encoder",
+        "_decoder",
+    )
+
+    def __init__(self, signature: str) -> None:
+        self.signature: Final = signature
+        parsed = parse_signature(signature)
+        self.function: Final = parsed[0]
+        input_types = parsed[1]
+        self.input_types: Final = input_types
+        output_types = parsed[2]
+        self.output_types: Final = output_types
+        self.fourbyte: Final = get_4byte_selector(self.function)
+        self._encoder: Final = (
+            TupleEncoder(encoders=tuple(_get_encoder(type_str) for type_str in input_types))
+            if input_types
+            else None
+        )
+        self._decoder: Final = TupleDecoder(
+            decoders=tuple(_get_decoder(type_str) for type_str in output_types)
+        )
+
+    def encode_data(self, args: list[Any] | tuple[Any, ...] | None = None) -> bytes:
+        return self.fourbyte + self._encoder(args) if args else self.fourbyte  # type: ignore [misc]
+
+    def decode_data(self, output: Decodable) -> Any:
+        return self._decoder(_stream_cls(output))

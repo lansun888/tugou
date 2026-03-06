@@ -1,0 +1,50 @@
+Metadata-Version: 2.4
+Name: cchecksum
+Version: 0.4.1
+Summary: An ~18x faster drop-in replacement for eth_utils.to_checksum_address. Raises the exact same Exceptions. Implemented in C.
+Home-page: https://github.com/BobTheBuidler/cchecksum
+Author: BobTheBuidler
+Author-email: bobthebuidlerdefi@gmail.com
+License: MIT
+Classifier: Intended Audience :: Developers
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Programming Language :: Python :: 3.13
+Classifier: Programming Language :: Python :: 3.14
+Classifier: Programming Language :: Python :: Implementation :: CPython
+Classifier: Operating System :: OS Independent
+Classifier: Topic :: Software Development :: Libraries
+Requires-Python: >=3.9,<4
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: eth-hash
+Requires-Dist: eth-typing
+Requires-Dist: pysha3<2.0.0,>=1.0.0; python_version < "3.9"
+Requires-Dist: safe-pysha3>=1.0.0; python_version >= "3.9"
+Dynamic: author
+Dynamic: author-email
+Dynamic: classifier
+Dynamic: description
+Dynamic: description-content-type
+Dynamic: home-page
+Dynamic: license
+Dynamic: license-file
+Dynamic: requires-dist
+Dynamic: requires-python
+Dynamic: summary
+
+## CChecksum
+
+[![PyPI](https://img.shields.io/pypi/v/cchecksum.svg?logo=Python&logoColor=white)](https://pypi.org/project/cchecksum/)
+[![Monthly Downloads](https://img.shields.io/pypi/dm/cchecksum)](https://pypistats.org/packages/cchecksum)
+
+CChecksum is an ~18x faster drop-in replacement for `eth_utils.to_checksum_address`, with the most cpu-intensive part implemented in C.
+
+It keeps the exact same API as the existing implementation, exceptions and all.
+
+Just `pip install cchecksum`, drop it in, and run your script with a substantial speed improvement.
+
+![image](https://github.com/user-attachments/assets/b989108f-350d-45a1-93c0-c1eaa3d8b801)

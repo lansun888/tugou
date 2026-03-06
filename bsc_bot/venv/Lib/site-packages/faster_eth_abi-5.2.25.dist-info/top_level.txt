@@ -1,0 +1,2 @@
+faster_eth_abi
+faster_eth_abi__mypyc

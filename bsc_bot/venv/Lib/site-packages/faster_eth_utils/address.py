@@ -1,0 +1,138 @@
+import re
+from typing import (
+    Any,
+    Final,
+    TypeGuard,
+)
+
+import cchecksum
+from eth_typing import (
+    Address,
+    AnyAddress,
+    ChecksumAddress,
+    HexAddress,
+    HexStr,
+)
+
+from .conversions import (
+    hexstr_if_str,
+    to_hex,
+)
+from .hexadecimal import (
+    decode_hex,
+    remove_0x_prefix,
+)
+from .types import (
+    is_bytes,
+    is_text,
+)
+
+_HEX_ADDRESS_REGEXP: Final = re.compile("(0x)?[0-9a-f]{40}", re.IGNORECASE | re.ASCII)
+
+
+to_checksum_address: Final = cchecksum.to_checksum_address
+"""
+Makes a checksum address given a supported format.
+We use the `cchecksum` implementation for max speed.
+"""
+
+
+def is_hex_address(value: Any) -> TypeGuard[HexAddress]:
+    """
+    Checks if the given string of text type is an address in hexadecimal encoded form.
+    """
+    if not is_text(value):
+        return False
+    return _HEX_ADDRESS_REGEXP.fullmatch(value) is not None
+
+
+def is_binary_address(value: Any) -> TypeGuard[bytes]:
+    """
+    Checks if the given string is an address in raw bytes form.
+    """
+    if not is_bytes(value):
+        return False
+    elif len(value) != 20:
+        return False
+    else:
+        return True
+
+
+def is_address(value: Any) -> bool:
+    """
+    Is the given string an address in any of the known formats?
+    """
+    if is_hex_address(value) or is_binary_address(value):
+        return True
+
+    return False
+
+
+def to_normalized_address(value: AnyAddress | str | bytes) -> HexAddress:
+    """
+    Converts an address to its normalized hexadecimal representation.
+    """
+    try:
+        hex_address = hexstr_if_str(to_hex, value).lower()
+    except AttributeError:
+        raise TypeError(f"Value must be any string, instead got type {type(value)}")
+    if is_address(hex_address):
+        return HexAddress(HexStr(hex_address))
+    else:
+        raise ValueError(
+            f"Unknown format {repr(value)}, attempted to normalize to "
+            f"{repr(hex_address)}"
+        )
+
+
+def is_normalized_address(value: Any) -> TypeGuard[HexAddress]:
+    """
+    Returns whether the provided value is an address in its normalized form.
+    """
+    return is_address(value) and value == to_normalized_address(value)
+
+
+def to_canonical_address(address: AnyAddress | str | bytes) -> Address:
+    """
+    Convert a valid address to its canonical form (20-length bytes).
+    """
+    return Address(decode_hex(to_normalized_address(address)))
+
+
+def is_canonical_address(address: Any) -> TypeGuard[Address]:
+    """
+    Returns `True` if the `value` is an address in its canonical form.
+    """
+    return is_binary_address(address) and address == to_canonical_address(address)
+8
+
+def is_same_address(
+    left: AnyAddress | str | bytes, right: AnyAddress | str | bytes
+) -> bool:
+    """
+    Checks if both addresses are same or not.
+    """
+    if not is_address(left) or not is_address(right):
+        raise ValueError("Both values must be valid addresses")
+    if left == right:
+        return True
+    return to_normalized_address(left) == to_normalized_address(right)
+
+
+def is_checksum_address(value: Any) -> TypeGuard[ChecksumAddress]:
+    if not is_hex_address(value):
+        return False
+    return value == to_checksum_address(value)
+
+
+def _is_checksum_formatted(value: Any) -> bool:
+    unprefixed_value = remove_0x_prefix(value)
+    return (
+        not unprefixed_value.islower()
+        and not unprefixed_value.isupper()
+        and not unprefixed_value.isnumeric()
+    )
+
+
+def is_checksum_formatted_address(value: Any) -> bool:
+    return is_hex_address(value) and _is_checksum_formatted(value)
