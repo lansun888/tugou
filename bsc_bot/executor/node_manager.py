@@ -12,10 +12,11 @@ class NodeManager:
     
     # 默认稳定节点 (优先使用第三方聚合RPC，避免币安官方节点在代理下超时)
     DEFAULT_NODES = [
+        "https://bsc-dataseed1.binance.org",
+        "https://bsc-dataseed2.binance.org",
         "https://1rpc.io/bnb",
-        "https://bsc-rpc.publicnode.com",
-        "https://bsc.drpc.org",
-        "https://bscrpc.com"
+        "https://rpc.ankr.com/bsc",
+        "https://bsc-rpc.publicnode.com"
     ]
 
     def __init__(self, config):

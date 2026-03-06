@@ -97,11 +97,27 @@ class BSCExecutor:
             except:
                 pass
 
+        # Add a small random delay to avoid thundering herd with PairListener
+        import random
+        await asyncio.sleep(random.uniform(0.5, 1.5))
+
         # 1. 初始化 Web3 连接 (MEV保护：使用私有RPC)
-        rpcs = self.config.get("network", {}).get("private_rpcs", [])
+        rpcs = []
         
-        if isinstance(rpcs, str):
-            rpcs = [rpcs]
+        # Check execute nodes first (usually better quality)
+        execute_nodes = self.config.get("nodes", {}).get("execute", [])
+        if execute_nodes:
+             if isinstance(execute_nodes, list):
+                 rpcs.extend(execute_nodes)
+             elif isinstance(execute_nodes, str):
+                 rpcs.append(execute_nodes)
+
+        # Then private_rpcs
+        private_rpcs = self.config.get("network", {}).get("private_rpcs", [])
+        if isinstance(private_rpcs, str):
+            rpcs.append(private_rpcs)
+        elif isinstance(private_rpcs, list):
+            rpcs.extend(private_rpcs)
             
         if not rpcs:
             rpcs = [
@@ -111,6 +127,15 @@ class BSCExecutor:
                 "https://bscrpc.com"
             ] # 默认回退
             
+        # Deduplicate
+        seen = set()
+        unique_rpcs = []
+        for r in rpcs:
+            if r and r not in seen:
+                unique_rpcs.append(r)
+                seen.add(r)
+        rpcs = unique_rpcs
+
         # 尝试连接 RPC
         for rpc in rpcs:
             w3 = None
@@ -143,6 +168,10 @@ class BSCExecutor:
                         await w3.provider._session.close()
                     except:
                         pass
+                
+                # If rate limited (429), pause briefly
+                if "429" in str(e) or "Too Many Requests" in str(e):
+                    await asyncio.sleep(1.0)
                 
         if not self.w3 or not await self.w3.is_connected():
             logger.error("无法连接到任何 RPC 节点")
@@ -270,6 +299,8 @@ class BSCExecutor:
                     await db.execute(f"ALTER TABLE {self.trades_table} ADD COLUMN gas_cost_bnb REAL DEFAULT 0")
                 if "total_cost_bnb" not in columns:
                     await db.execute(f"ALTER TABLE {self.trades_table} ADD COLUMN total_cost_bnb REAL DEFAULT 0")
+                if "dex_name" not in columns:
+                    await db.execute(f"ALTER TABLE {self.trades_table} ADD COLUMN dex_name TEXT")
             except Exception as e:
                 logger.error(f"Trade table migration failed: {e}")
 
@@ -603,25 +634,28 @@ class BSCExecutor:
             logger.warning(f"Failed to get liquidity for {token_address}: {e}")
             return 0.0
 
-    async def buy_token(self, token_address, token_symbol="UNKNOWN", amount_multiplier=1.0):
+    async def buy_token(self, token_address, token_symbol="UNKNOWN", amount_multiplier=1.0, dex_name=None, amount_bnb=None):
         """
         买入代币
         :param token_address: 代币地址
         :param token_symbol: 代币符号(用于日志)
         :param amount_multiplier: 买入金额倍数 (默认 1.0)
+        :param dex_name: DEX名称 (用于记录和分析)
+        :param amount_bnb: 指定买入金额 (覆盖配置)
         """
         token_address = self.w3_to_checksum(token_address)
         
-        # 买入前最后一道防线
-        # 快速验证当前流动性是否真实存在
-        try:
-            liquidity = await self.get_pair_liquidity(token_address)
-            if liquidity < 10:
-                logger.warning(f"买入前验证失败：流动性{liquidity:.2f}BNB不足")
-                return {"status": "failed", "reason": "insufficient_liquidity"}
-        except Exception as e:
-            logger.error(f"买入前流动性验证异常，取消买入: {e}")
-            return {"status": "failed", "reason": f"liquidity_check_error: {e}"}
+        # 买入前最后一道防线：验证 PancakeSwap V2 流动性
+        # Four.meme 使用 Bonding Curve，无 PancakeSwap V2 Pair，跳过此检查
+        if dex_name != "four_meme":
+            try:
+                liquidity = await self.get_pair_liquidity(token_address)
+                if liquidity < 5:
+                    logger.warning(f"买入前验证失败：流动性{liquidity:.2f}BNB不足")
+                    return {"status": "failed", "reason": "insufficient_liquidity"}
+            except Exception as e:
+                logger.error(f"买入前流动性验证异常，取消买入: {e}")
+                return {"status": "failed", "reason": f"liquidity_check_error: {e}"}
 
         # 0. 防重复买入检查
         if token_address.lower() in self.bought_tokens:
@@ -631,8 +665,13 @@ class BSCExecutor:
         try:
             # 读取配置
             trading_conf = self.config.get("trading", {})
-            base_amount = float(trading_conf.get("buy_amount", 0.01))
-            amount_bnb_in = base_amount * amount_multiplier
+            
+            if amount_bnb is not None:
+                amount_bnb_in = float(amount_bnb)
+            else:
+                base_amount = float(trading_conf.get("buy_amount", 0.01))
+                amount_bnb_in = base_amount * amount_multiplier
+                
             slippage_percent = float(trading_conf.get("slippage", 12))
             deadline_secs = int(trading_conf.get("deadline_seconds", 45))
             
@@ -641,13 +680,34 @@ class BSCExecutor:
                 log_prefix = "[Simulation]" if self.mode == "simulation" else "[Test Mode]"
                 logger.success(f"{log_prefix} 买入成功: {token_symbol} ({token_address}) 花费 {amount_bnb_in} BNB")
                 # 模拟逻辑
+                # platform=dex_name：four_meme 跳过路由查询（会 revert），改用 DexScreener
                 try:
-                    price_info = await self.get_token_price(token_address)
-                    price_bnb = price_info.get("price_bnb", 0.001) if price_info else 0.001
-                    if price_bnb == 0: price_bnb = 0.001
-                except:
-                    price_bnb = 0.001
-                
+                    price_info = await self.get_token_price(token_address, platform=dex_name)
+                    price_bnb = price_info.get("price_bnb", 0.0) if price_info else 0.0
+                except Exception:
+                    price_bnb = 0.0
+
+                if price_bnb == 0:
+                    # four_meme 最终兜底：从链上 totalSupply 估算（DexScreener 未收录时）
+                    if dex_name == "four_meme":
+                        try:
+                            _decimals = self.token_decimals_cache.get(token_address, 18)
+                            _tc = self.w3.eth.contract(
+                                address=self.w3_to_checksum(token_address), abi=ERC20_ABI
+                            )
+                            _ts_raw = await _tc.functions.totalSupply().call()
+                            _ts = _ts_raw / (10 ** _decimals)
+                            if _ts > 0:
+                                price_bnb = 3.0 / _ts  # 假设初始市值 ~3 BNB
+                                logger.info(
+                                    f"[four_meme] totalSupply估算价格: {price_bnb:.2e} BNB/token "
+                                    f"(supply={_ts:.0f})"
+                                )
+                        except Exception:
+                            price_bnb = 3e-9  # 兜底：1B supply，3 BNB 市值
+                    else:
+                        price_bnb = 0.001  # 普通代币最终兜底
+
                 token_amount = amount_bnb_in / price_bnb
                 
                 # 记录模拟交易
@@ -690,7 +750,8 @@ class BSCExecutor:
                     gas_used=est_gas_used,
                     gas_price_gwei=est_gas_price_gwei,
                     gas_cost_bnb=est_gas_cost_bnb,
-                    total_cost_bnb=est_total_cost
+                    total_cost_bnb=est_total_cost,
+                    dex_name=dex_name
                 )
                 
                 return {
@@ -817,7 +878,8 @@ class BSCExecutor:
                     gas_used=gas_used,
                     gas_price_gwei=gas_price_gwei,
                     gas_cost_bnb=gas_cost_bnb,
-                    total_cost_bnb=total_cost_bnb
+                    total_cost_bnb=total_cost_bnb,
+                    dex_name=dex_name
                 )
                 
                 return {
@@ -832,7 +894,8 @@ class BSCExecutor:
                 await self._log_trade(
                     token_address, token_symbol, "buy", 
                     "0", str(amount_bnb_in), 
-                    tx_hash_hex, "failed"
+                    tx_hash_hex, "failed",
+                    dex_name=dex_name
                 )
                 return {"status": "failed", "reason": "reverted", "tx_hash": tx_hash_hex}
                 
@@ -841,7 +904,17 @@ class BSCExecutor:
             # 简单重试逻辑 (如果是 gas 不足可以考虑重试，这里简化处理)
             return {"status": "failed", "reason": str(e)}
 
-    async def sell_token(self, token_address, token_symbol="UNKNOWN", sell_percentage=100, slippage=None, gas_price=None, simulated_balance=None, pnl_bnb=0.0, pnl_percentage=0.0, manual_price=None, sell_percentage_real=None, cost_basis_bnb=None):
+    async def execute_buy(self, token_address, amount_bnb, buy_reason="manual"):
+        """
+        Unified entry point for buying (Manual, Snipe, etc.)
+        """
+        dex_name = None
+        if "four_meme" in buy_reason:
+            dex_name = "four_meme"
+        
+        return await self.buy_token(token_address, token_symbol="UNKNOWN", amount_bnb=amount_bnb, dex_name=dex_name)
+
+    async def sell_token(self, token_address, token_symbol="UNKNOWN", sell_percentage=100, slippage=None, gas_price=None, simulated_balance=None, pnl_bnb=0.0, pnl_percentage=0.0, manual_price=None, sell_percentage_real=None, cost_basis_bnb=None, dex_name=None):
         """
         卖出代币
         :param token_address: 代币地址
@@ -869,20 +942,19 @@ class BSCExecutor:
                 sell_amount = 1000.0 # Mock default if not provided
                 
             # Get current price for realistic simulation
+            # platform=dex_name：four_meme 跳过路由查询（会 revert），改用 DexScreener
             price_bnb = 0.0
             if manual_price is not None and manual_price > 0:
                 price_bnb = float(manual_price)
             else:
                 try:
-                    price_info = await self.get_token_price(token_address)
+                    price_info = await self.get_token_price(token_address, platform=dex_name)
                     price_bnb = price_info.get("price_bnb", 0.0) if price_info else 0.0
-                except:
+                except Exception:
                     price_bnb = 0.0
-            
-            # If price is still 0, use a very small fallback or 0 (don't use 0.001 which is huge for meme coins)
-            # Better to have 0 BNB amount than wrong huge amount
+
             if price_bnb == 0:
-                 logger.warning(f"无法获取 {token_symbol} 价格，模拟卖出金额可能为0")
+                logger.warning(f"无法获取 {token_symbol} 价格，模拟卖出金额可能为0")
 
             # Apply slippage/tax deduction for realistic simulation
             # User requirement: Simulation slippage = Config * 0.6
@@ -933,7 +1005,8 @@ class BSCExecutor:
                 gas_used=est_gas_used,
                 gas_price_gwei=est_gas_price_gwei,
                 gas_cost_bnb=est_gas_cost_bnb,
-                total_cost_bnb=total_cost_bnb
+                total_cost_bnb=total_cost_bnb,
+                dex_name=dex_name
             )
             
             return {
@@ -1070,7 +1143,8 @@ class BSCExecutor:
                     gas_used=gas_used,
                     gas_price_gwei=gas_price_gwei,
                     gas_cost_bnb=gas_cost_bnb,
-                    total_cost_bnb=total_cost_bnb
+                    total_cost_bnb=total_cost_bnb,
+                    dex_name=dex_name
                 )
                 return {"status": "success", "tx_hash": tx_hash_hex, "amount_bnb": bnb_got}
             else:
@@ -1170,13 +1244,18 @@ class BSCExecutor:
         return 600.0
 
 
-    async def get_token_price(self, token_address):
-        """查询代币价格 (以 BNB 和 USD 计价) - 优先使用储备量计算以提高精度"""
+    async def get_token_price(self, token_address, platform=None):
+        """查询代币价格 (以 BNB 和 USD 计价) - 优先使用储备量计算以提高精度
+
+        platform='four_meme': 跳过 PancakeSwap router（会 revert），改用 DexScreener 作为
+        bonding curve 价格源；如已毕业上 DEX，则 step3 的 getReserves 会直接拿到价格。
+        """
         token_address = self.w3_to_checksum(token_address)
+        is_four_meme = (platform == "four_meme")
         try:
             # 1. 获取 BNB 价格
             bnb_price_usd = await self._get_bnb_price_usd()
-            
+
             # 2. Get Decimals (Cached)
             decimals = 18 # Default
             try:
@@ -1188,16 +1267,17 @@ class BSCExecutor:
                     self.token_decimals_cache[token_address] = decimals
             except Exception as e:
                 logger.warning(f"获取 Decimals 失败，默认使用 18: {e}")
-            
+
             price_bnb = 0.0
             liquidity_bnb = 0.0
-            
-            # 3. 尝试通过储备量计算价格 (最准确，无视滑点，解决低价币精度问题)
+
+            # 3. 尝试通过 PancakeSwap pair 储备量计算价格
+            #    对已毕业上 DEX 的 four_meme 代币同样有效
             try:
                 # Get Factory (Cached)
                 if not self.factory_address:
                     self.factory_address = await self.router.functions.factory().call()
-                
+
                 # Get Pair (Cached)
                 if token_address in self.pair_address_cache:
                     pair_address = self.pair_address_cache[token_address]
@@ -1205,31 +1285,30 @@ class BSCExecutor:
                     factory = self.w3.eth.contract(address=self.factory_address, abi=PANCAKESWAP_V2_FACTORY_ABI)
                     pair_address = await factory.functions.getPair(token_address, self.WBNB_ADDRESS).call()
                     self.pair_address_cache[token_address] = pair_address
-                
+
                 if pair_address != "0x0000000000000000000000000000000000000000":
                     pair = self.w3.eth.contract(address=pair_address, abi=PANCAKESWAP_PAIR_ABI)
                     reserves = await pair.functions.getReserves().call()
-                    
+
                     # Get Token0 (Cached)
                     if pair_address in self.pair_token0_cache:
                         token0 = self.pair_token0_cache[pair_address]
                     else:
                         token0 = await pair.functions.token0().call()
                         self.pair_token0_cache[pair_address] = token0
-                    
+
                     if token0.lower() == self.WBNB_ADDRESS.lower():
                         reserve_bnb = reserves[0]
                         reserve_token = reserves[1]
                     else:
                         reserve_bnb = reserves[1]
                         reserve_token = reserves[0]
-                        
+
                     # 计算流动性
                     liquidity_bnb = float(self.w3.from_wei(reserve_bnb, 'ether'))
-                    
+
                     # 计算价格: Price = BNB_Reserve / Token_Reserve
                     if reserve_token > 0:
-                        # 调整精度
                         adj_reserve_bnb = reserve_bnb / (10 ** 18)
                         adj_reserve_token = reserve_token / (10 ** decimals)
                         if adj_reserve_token > 0:
@@ -1237,8 +1316,20 @@ class BSCExecutor:
             except Exception as e:
                 logger.warning(f"储备量价格计算失败: {e}")
 
-            # 4. Fallback: 如果储备量方法失败 (比如没有直接 LP)，使用路由 getAmountsOut
-            if price_bnb == 0:
+            # 4a. four_meme bonding curve：pair 不存在时走 DexScreener，不走路由（会 revert）
+            if price_bnb == 0 and is_four_meme:
+                try:
+                    from bsc_bot.utils.dexscreener_client import get_token_data
+                    dex_data = await get_token_data(token_address)
+                    if dex_data and dex_data.get("price_bnb", 0) > 0:
+                        price_bnb = dex_data["price_bnb"]
+                        liquidity_bnb = dex_data.get("liquidity_bnb", 0.0)
+                        logger.debug(f"[four_meme] DexScreener价格: {price_bnb:.2e} BNB/token")
+                except Exception as e:
+                    logger.debug(f"[four_meme] DexScreener价格查询失败: {e}")
+
+            # 4b. 普通代币：路由 getAmountsOut fallback（four_meme 跳过，避免 revert）
+            if price_bnb == 0 and not is_four_meme:
                 try:
                     # 反向查询：1 BNB 能买多少 Token，然后倒数
                     one_bnb = self.w3.to_wei(1, 'ether')
@@ -1248,15 +1339,14 @@ class BSCExecutor:
                     if tokens_got > 0:
                         price_bnb = 1.0 / tokens_got
                 except Exception as e:
-                     logger.debug(f"路由价格查询失败 (Buy Path): {e}")
-                     # 再次 Fallback: 正向查询 (可能精度丢失)
-                     try:
-                         one_token = 10 ** decimals
-                         path = [token_address, self.WBNB_ADDRESS]
-                         amounts = await self.router.functions.getAmountsOut(one_token, path).call()
-                         price_bnb = float(self.w3.from_wei(amounts[-1], 'ether'))
-                     except Exception as e2:
-                         logger.debug(f"路由价格查询失败 (Sell Path): {e2}")
+                    logger.debug(f"路由价格查询失败 (Buy Path): {e}")
+                    try:
+                        one_token = 10 ** decimals
+                        path = [token_address, self.WBNB_ADDRESS]
+                        amounts = await self.router.functions.getAmountsOut(one_token, path).call()
+                        price_bnb = float(self.w3.from_wei(amounts[-1], 'ether'))
+                    except Exception as e2:
+                        logger.debug(f"路由价格查询失败 (Sell Path): {e2}")
 
             price_usd = float(price_bnb) * bnb_price_usd
 
@@ -1415,7 +1505,7 @@ class BSCExecutor:
 
     async def _log_trade(self, token_addr, token_name, action, amount_token, amount_bnb, tx_hash, status, price_bnb=None, token_symbol=None, pnl_bnb=0.0, pnl_percentage=0.0,
                          expected_amount=0.0, actual_amount=0.0, slippage_pct=0.0, slippage_bnb=0.0,
-                         gas_used=0, gas_price_gwei=0.0, gas_cost_bnb=0.0, total_cost_bnb=0.0, sell_percentage=100.0):
+                         gas_used=0, gas_price_gwei=0.0, gas_cost_bnb=0.0, total_cost_bnb=0.0, sell_percentage=100.0, dex_name=None):
         """记录交易到数据库"""
         try:
             # Try to calculate price_bnb if not provided
@@ -1447,14 +1537,14 @@ class BSCExecutor:
                         token_address, token_name, token_symbol, action, amount_token, amount_bnb, price_bnb, 
                         tx_hash, status, created_at, pnl_bnb, pnl_percentage, sell_percentage,
                         expected_amount, actual_amount, slippage_pct, slippage_bnb,
-                        gas_used, gas_price_gwei, gas_cost_bnb, total_cost_bnb
+                        gas_used, gas_price_gwei, gas_cost_bnb, total_cost_bnb, dex_name
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     token_addr, safe_token_name, token_symbol, action, float(amount_token), float(amount_bnb) if amount_bnb else 0.0, float(price_bnb) if price_bnb else 0.0, 
                     tx_hash, status, timestamp, pnl_bnb, pnl_percentage, float(sell_percentage),
                     float(expected_amount), float(actual_amount), float(slippage_pct), float(slippage_bnb),
-                    int(gas_used), float(gas_price_gwei), float(gas_cost_bnb), float(total_cost_bnb)
+                    int(gas_used), float(gas_price_gwei), float(gas_cost_bnb), float(total_cost_bnb), dex_name
                 ))
                 await db.commit()
         except Exception as e:

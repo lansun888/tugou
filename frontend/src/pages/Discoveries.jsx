@@ -293,7 +293,14 @@ const Discoveries = () => {
                         </td>
                         <td className="py-3 px-4">
                           <div className="flex flex-col">
-                            <span className="font-medium text-gray-900">{item.token_symbol}</span>
+                            <div className="flex items-center gap-1">
+                              <span className="font-medium text-gray-900">{item.token_symbol}</span>
+                              {item.dex_name === 'four_meme' && (
+                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-700 border border-purple-200" title="Four.meme Platform">
+                                  4M
+                                </span>
+                              )}
+                            </div>
                             <div className="flex items-center">
                               <span className="text-xs text-gray-400 font-mono truncate max-w-[100px]" title={item.token_address}>
                                 {item.token_address}

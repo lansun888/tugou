@@ -1,8 +1,34 @@
 import aiohttp
 import asyncio
+import time
 from .http_client import fetch_with_proxy
 
 DEXSCREENER_API = "https://api.dexscreener.com"
+
+# ── 熔断器：连续失败 3 次后暂停 60 秒，避免代理挂掉时无效刷请求 ──
+_CB_THRESHOLD = 3       # 连续失败几次触发熔断
+_CB_COOLDOWN  = 60.0    # 熔断冷却时间（秒）
+_cb_fail_count: int   = 0
+_cb_open_until: float = 0.0
+
+
+def _cb_record_failure():
+    global _cb_fail_count, _cb_open_until
+    _cb_fail_count += 1
+    if _cb_fail_count >= _CB_THRESHOLD:
+        _cb_open_until = time.time() + _CB_COOLDOWN
+        _cb_fail_count = 0  # 重置计数，冷却后允许再次尝试
+
+
+def _cb_record_success():
+    global _cb_fail_count, _cb_open_until
+    _cb_fail_count = 0
+    _cb_open_until = 0.0
+
+
+def _cb_is_open() -> bool:
+    """熔断器打开（暂停请求）时返回 True"""
+    return time.time() < _cb_open_until
 
 
 def _parse_pair(pair: dict) -> dict:
@@ -34,27 +60,33 @@ async def get_token_data(token_address: str) -> dict:
     接口：GET /token-pairs/v1/bsc/{tokenAddress}
     返回流动性最大的交易对数据
     """
+    if _cb_is_open():
+        return None  # 熔断中，跳过请求
+
     url = f"{DEXSCREENER_API}/token-pairs/v1/bsc/{token_address}"
     try:
         pairs = await fetch_with_proxy(url, timeout=3)
         if not pairs:
+            _cb_record_failure()
             return None
-        
+
         if isinstance(pairs, list):
             pair_list = pairs
         elif isinstance(pairs, dict):
-            # DexScreener sometimes wraps in schemaVersion, pairs key
             pair_list = pairs.get('pairs', [])
         else:
+            _cb_record_failure()
             return None
-            
+
         if not pair_list:
+            # 空列表不算失败（代币未上 DexScreener），不计入熔断
             return None
-            
+
+        _cb_record_success()
         best_pair = max(pair_list, key=lambda x: (x.get('liquidity') or {}).get('usd', 0))
         return _parse_pair(best_pair)
     except Exception as e:
-        print(f"get_token_data failed: {e}")
+        _cb_record_failure()
         return None
 
 
@@ -67,6 +99,9 @@ async def get_batch_prices(token_addresses: list) -> dict:
     if not token_addresses:
         return {}
 
+    if _cb_is_open():
+        return {}  # 熔断中，整批跳过
+
     results = {}
     chunks = [token_addresses[i:i+30] for i in range(0, len(token_addresses), 30)]
 
@@ -76,12 +111,16 @@ async def get_batch_prices(token_addresses: list) -> dict:
         try:
             pairs_list = await fetch_with_proxy(url, timeout=8)
             if not pairs_list:
+                _cb_record_failure()
                 continue
-                
-            # DexScreener might return list or dict with pairs
+
             if isinstance(pairs_list, dict):
                 pairs_list = pairs_list.get('pairs', [])
-                
+
+            if not pairs_list:
+                continue  # 空列表不算失败
+
+            _cb_record_success()
             for pair in pairs_list:
                 token_addr = (pair.get('baseToken') or {}).get('address', '').lower()
                 if not token_addr:
@@ -90,10 +129,9 @@ async def get_batch_prices(token_addresses: list) -> dict:
                 if token_addr not in results:
                     results[token_addr] = parsed
                 else:
-                    # 保留流动性更大的那个
                     if parsed['liquidity_usd'] > results[token_addr]['liquidity_usd']:
                         results[token_addr] = parsed
         except Exception as e:
-            print(f"批量查询失败: {e}")
+            _cb_record_failure()
 
     return results

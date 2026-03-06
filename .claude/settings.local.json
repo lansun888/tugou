@@ -18,7 +18,15 @@
       "WebFetch(domain:four-meme.gitbook.io)",
       "Bash(bsc_botvenvScriptspython.exe:*)",
       "Bash(D:/workSpace/tugou/bsc_bot/venv/Scripts/python.exe:*)",
-      "Bash(D:/workSpace/tugou/bsc_bot/venv/Scripts/pip.exe install:*)"
+      "Bash(D:/workSpace/tugou/bsc_bot/venv/Scripts/pip.exe install:*)",
+      "Read(//usr/**)",
+      "Bash(py --version)",
+      "Bash(python3:*)",
+      "Read(//c/Users/admin/AppData/Local/Programs/Python/Python312/**)",
+      "Read(//c/Python312/**)",
+      "Bash(ls /c/Python*/python.exe)",
+      "Bash(/c/Users/admin/AppData/Local/Programs/Python/Python312/python.exe:*)",
+      "Bash(wmic process:*)"
     ]
   }
 }

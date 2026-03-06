@@ -204,6 +204,7 @@ class TradingBot:
 
             liquidity_bnb = pair_data.get("liquidity_bnb", 0.0)
             queue_size    = self.listener.queue.qsize()
+            is_four_meme  = (dex_name == "four_meme")
             logger.info(
                 f"Processing new pair: {token_symbol} ({token_address}) on {dex_name} "
                 f"| liq={liquidity_bnb:.2f} BNB | queue_remaining={queue_size}"
@@ -214,29 +215,35 @@ class TradingBot:
                 logger.warning("Bot is paused. Skipping new pair.")
                 return
 
-            quick_observe_time = self.config.get("monitor", {}).get("quick_observe_time", 5)
+            four_meme_cfg = self.config.get("four_meme", {})
 
-            # ── 阶段1：初始状态获取（3s 超时，失败则跳过）──
-            # web3.py AsyncHTTPProvider 默认 30s 超时，必须显式限制
+            # ── 阶段1：初始状态获取 (four_meme 跳过，bonding curve 无 pair 地址) ──
             t1 = time.perf_counter()
-            try:
-                initial_state = await asyncio.wait_for(
-                    self.security_checker.get_token_state(token_address, pair_address),
-                    timeout=3.0
-                )
-            except asyncio.TimeoutError:
-                logger.warning(f"⏱️ 1.初始状态获取超时(>3s)，跳过")
+            if is_four_meme:
                 initial_state = {}
-            dur1 = _ms(t1)   # ★ 立即捕获，后面汇总用 dur1 而非 _ms(t1)
-            logger.info(f"⏱️ 1.初始状态获取: {dur1:.0f}ms")
+                logger.info(f"⏱️ 1.初始状态获取: 跳过(four_meme)")
+                dur1 = 0
+            else:
+                try:
+                    initial_state = await asyncio.wait_for(
+                        self.security_checker.get_token_state(token_address, pair_address),
+                        timeout=3.0
+                    )
+                except asyncio.TimeoutError:
+                    logger.warning(f"⏱️ 1.初始状态获取超时(>3s)，跳过")
+                    initial_state = {}
+                dur1 = _ms(t1)
+                logger.info(f"⏱️ 1.初始状态获取: {dur1:.0f}ms")
 
-            # ── 阶段2：快速观察等待 ──
+            # ── 阶段2：快速观察等待 (four_meme 时间窗口极短，直接跳过) ──
             t2 = time.perf_counter()
+            skip_observation = is_four_meme and four_meme_cfg.get("skip_observation", True)
+            quick_observe_time = 0 if skip_observation else self.config.get("monitor", {}).get("quick_observe_time", 5)
             if quick_observe_time > 0:
-                logger.info(f"⏱️ 2.快速观察等待: {quick_observe_time * 1000:.0f}ms (配置固定值)")
+                logger.info(f"⏱️ 2.快速观察等待: {quick_observe_time * 1000:.0f}ms")
                 await asyncio.sleep(quick_observe_time)
             else:
-                logger.info(f"⏱️ 2.快速观察等待: 跳过(quick_observe_time=0)")
+                logger.info(f"⏱️ 2.快速观察等待: 跳过({'four_meme' if skip_observation else 'quick_observe_time=0'})")
 
             # ── 阶段3+4：安全分析 + 预构建交易（并行）──
             t3 = time.perf_counter()
@@ -247,7 +254,8 @@ class TradingBot:
                     token_address=token_address,
                     deployer_address=deployer,
                     pair_address=pair_address,
-                    initial_state=initial_state
+                    initial_state=initial_state,
+                    platform='four_meme' if is_four_meme else None
                 )
                 logger.info(f"⏱️ 3.安全分析(内部): {_ms(ts):.0f}ms  score={res.get('final_score')} decision={res.get('decision')}")
                 logger.info(f"    ├─ 分析耗时明细: analysis_time={res.get('analysis_time', 0)*1000:.0f}ms")
@@ -270,9 +278,12 @@ class TradingBot:
             score = analysis_result["final_score"]
             decision = analysis_result["decision"]
 
-            min_score = self.config.get("monitor", {}).get("min_security_score", 80)
+            if is_four_meme:
+                min_score = four_meme_cfg.get("min_score", 75)
+            else:
+                min_score = self.config.get("monitor", {}).get("min_security_score", 80)
             if score < min_score:
-                logger.info(f"Security Score {score} < {min_score}. REJECT.")
+                logger.info(f"[{dex_name}] Security Score {score} < {min_score}. REJECT.")
                 decision = "reject"
 
             logger.info(f"Score: {score} | Decision: {decision}")
@@ -322,7 +333,21 @@ class TradingBot:
             if decision in ["buy", "half_buy"]:
                 t6 = time.perf_counter()
 
-                if pre_built_data and "tx" in pre_built_data:
+                # four_meme 使用专属 buy_amount，换算成 multiplier
+                if is_four_meme:
+                    base_amount = self.config.get("trading", {}).get("buy_amount", 0.1)
+                    four_meme_amount = four_meme_cfg.get("buy_amount", 0.05)
+                    amount_multiplier = (four_meme_amount / base_amount) if base_amount > 0 else 0.5
+                    if decision == "half_buy":
+                        amount_multiplier *= 0.5
+                    logger.info(f"[four_meme] 买入金额: {four_meme_amount} BNB (multiplier={amount_multiplier:.2f})")
+                    buy_result = await self.executor.buy_token(
+                        token_address=token_address,
+                        token_symbol=token_symbol,
+                        amount_multiplier=amount_multiplier,
+                        dex_name=dex_name
+                    )
+                elif pre_built_data and "tx" in pre_built_data:
                     logger.info("Using pre-built transaction for fast execution...")
                     pre_built_data["token_symbol"] = token_symbol
                     if decision == "half_buy":
@@ -339,6 +364,22 @@ class TradingBot:
                 # ★ 立即捕获耗时，之后不再用 _ms(t6)
                 dur6 = _ms(t6)
                 logger.info(f"⏱️ 6.买入执行: {dur6:.0f}ms  status={buy_result.get('status')}")
+
+                if buy_result["status"] != "success":
+                    reason = buy_result.get("reason", "unknown")
+                    logger.warning(f"[{dex_name}] 买入失败: {reason}，更新DB状态")
+                    async def _mark_buy_failed(pa=pair_address, r=reason):
+                        try:
+                            async with aiosqlite.connect(self.db_path, timeout=1.0) as db:
+                                await db.execute(
+                                    "UPDATE pairs SET status = 'buy_failed', risk_reason = ? WHERE pair_address = ?",
+                                    (r, pa)
+                                )
+                                await db.commit()
+                        except Exception as e:
+                            logger.error(f"Failed to update buy_failed status: {e}")
+                    asyncio.create_task(_mark_buy_failed())
+                    return
 
                 if buy_result["status"] == "success":
                     amount_bnb_in = buy_result.get("amount_bnb_in", 0.0)
@@ -362,7 +403,8 @@ class TradingBot:
                         buy_gas_price=buy_gas_price,
                         dex_data={},           # position_manager 监控会自动从 DexScreener 补全
                         pair_address=pair_address,
-                        initial_liquidity_bnb=initial_state.get('liquidity_bnb', 0.0) if initial_state else 0.0
+                        initial_liquidity_bnb=initial_state.get('liquidity_bnb', 0.0) if initial_state else 0.0,
+                        dex_name=dex_name
                     )
                     dur8 = _ms(t8)
                     logger.info(f"⏱️ 8.仓位入库: {dur8:.0f}ms")

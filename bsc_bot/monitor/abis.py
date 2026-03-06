@@ -43,13 +43,23 @@ PANCAKESWAP_V3_FACTORY_ABI = [
     }
 ]
 
-# Four.Meme Factory ABI (TokenCreate)
+# Four.Meme Factory ABI
+# TokenCreate event verified via on-chain data:
+# topic0 = 0x396d5e902b675b032348d3d2e9517ee8f0c4a926603fbc075d3d282ff00cad20
+# = keccak256("TokenCreate(address,address,uint256,string,string,uint256,uint256,uint256)")
+# All params are NON-indexed (ntopics=1, all data in `data` field, 384 bytes)
 FOUR_MEME_FACTORY_ABI = [
     {
         "anonymous": False,
         "inputs": [
-            {"indexed": True, "internalType": "address", "name": "token", "type": "address"},
-            {"indexed": True, "internalType": "address", "name": "creator", "type": "address"},
+            {"indexed": False, "internalType": "address", "name": "creator", "type": "address"},
+            {"indexed": False, "internalType": "address", "name": "token", "type": "address"},
+            {"indexed": False, "internalType": "uint256", "name": "requestId", "type": "uint256"},
+            {"indexed": False, "internalType": "string", "name": "name", "type": "string"},
+            {"indexed": False, "internalType": "string", "name": "symbol", "type": "string"},
+            {"indexed": False, "internalType": "uint256", "name": "totalSupply", "type": "uint256"},
+            {"indexed": False, "internalType": "uint256", "name": "launchTime", "type": "uint256"},
+            {"indexed": False, "internalType": "uint256", "name": "launchFee", "type": "uint256"},
         ],
         "name": "TokenCreate",
         "type": "event",

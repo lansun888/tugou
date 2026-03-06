@@ -308,6 +308,9 @@ const PositionCard = ({ pos, onSell }) => {
             <div className="flex items-center gap-2">
               <Text className="text-white font-bold text-lg flex items-center gap-2">
                 {pos.token_symbol || pos.token_name}
+                {pos.dex_name === 'four_meme' && (
+                  <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-700 border border-purple-200" title="Four.meme Platform">4M</span>
+                )}
                 {isSuperProfitable && <span className="text-xs">🚀</span>}
                 {inHoneypotCheckWindow && (
                   <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-900/50 text-amber-300 border border-amber-700/50" title="买入后2分钟内，正在进行延迟貔貅评估">⏳ 2min评估中</span>

@@ -206,6 +206,7 @@ class DatabaseHelper:
                         "gas_price_gwei": to_float(item.get("gas_price_gwei")),
                         "gas_cost_bnb": to_float(item.get("gas_cost_bnb")),
                         "total_cost_bnb": to_float(item.get("total_cost_bnb")),
+                        "dex_name": item.get("dex_name"),
                         "_ts": ts
                     })
 

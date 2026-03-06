@@ -22,6 +22,9 @@ PANCAKESWAP_V2_FACTORY = "0xcA143Ce32Fe78f1f7019d7d551a6402fC5350c73"
 PANCAKESWAP_V3_FACTORY = "0x0BFbCF9fa4f9C56B0F40a671Ad40E0805A091865"
 BISWAP_FACTORY = "0x858E3312ed3A876947EA49d572A7C42DE08af7EE"
 FOUR_MEME_FACTORY = "0x5c952063c7fc8610FFDB798152D69F0B9550762b"
+# Verified via on-chain inspection: 0x7db... and 0x0a55... are bonding-curve TRADE events, NOT Listed.
+# Real graduation event topic unknown (rare); monitoring is done via TokenCreate only.
+FOUR_MEME_TOKEN_CREATE_TOPIC = "0x396d5e902b675b032348d3d2e9517ee8f0c4a926603fbc075d3d282ff00cad20"
 
 class PriorityPairQueue:
     """异步优先级队列：流动性更高的新币优先处理。
@@ -53,11 +56,16 @@ class PriorityPairQueue:
 
 class PairListener:
     def __init__(self, config_path: str = "config.yaml", db_path: str = "./data/bsc_bot.db"):
+        self.config_path = config_path
         self.config = self.load_config(config_path)
         self.w3: Optional[AsyncWeb3] = None
         self.queue = PriorityPairQueue()
         self.db_path = db_path
         self.running = False
+        self.security_checker = None # Injected by TradingBot
+        self.executor = None # Injected by TradingBot
+        self._pending_four_meme = {} # {token_address: analysis_task}
+        self.processed_tokens = set() # Cache for processed tokens to avoid duplicates from Trade events
         
         # 敏感词列表
         self.sensitive_words = ["TEST", "FAKE", "SCAM", "HONE", "POT", "RUG"]
@@ -66,8 +74,10 @@ class PairListener:
         self.connection_status = {
             "pancakeswap_v2": False,
             "pancakeswap_v3": False,
-            "biswap": False
+            "biswap": False,
+            "four_meme": False
         }
+        self.reconnect_lock = asyncio.Lock()
 
     def load_config(self, path: str) -> dict:
         try:
@@ -153,67 +163,101 @@ class PairListener:
 
     async def setup_web3(self):
         """初始化Web3连接 (支持多RPC故障转移)"""
-        # Close existing connection if any
-        if self.w3:
-            await self._close_provider(self.w3.provider)
-
-        # 1. Get RPC list from Env or Config
-        rpc_urls = []
-        
-        env_rpc = os.getenv("BSC_WS_RPC")
-        if env_rpc:
-            rpc_urls.append(env_rpc)
-            
-        config_rpcs = self.config.get("network", {}).get("private_rpcs", [])
-        if isinstance(config_rpcs, str):
-            rpc_urls.append(config_rpcs)
-        elif isinstance(config_rpcs, list):
-            rpc_urls.extend(config_rpcs)
-            
-        # Fallback to public RPCs if list is empty
-        if not rpc_urls:
-            rpc_urls = [
-                "https://bsc-dataseed1.binance.org",
-                "https://bsc-dataseed2.binance.org", 
-                "https://1rpc.io/bnb",
-                "https://bscrpc.com"
-            ]
-            
-        logger.info(f"Trying to connect to BSC nodes, {len(rpc_urls)} available...")
-        
-        for rpc_url in rpc_urls:
-            w3 = None
-            try:
-                if rpc_url.startswith("http"):
-                    provider = AsyncWeb3.AsyncHTTPProvider(rpc_url, request_kwargs={'timeout': 10})
-                    w3 = AsyncWeb3(provider)
-                    logger.info(f"Connecting to HTTP RPC: {rpc_url}")
-                else:
-                    w3 = AsyncWeb3(AsyncWeb3.WebSocketProvider(rpc_url, websocket_kwargs={'timeout': 10}))
-                    logger.info(f"Connecting to WebSocket RPC: {rpc_url}")
-                
-                w3.middleware_onion.inject(ExtraDataToPOAMiddleware, layer=0)
-                
-                # Check connection with timeout
+        async with self.reconnect_lock:
+            # Check if already connected by another task
+            if self.w3:
                 try:
-                    if await asyncio.wait_for(w3.is_connected(), timeout=10.0):
-                        self.w3 = w3
-                        logger.success(f"✅ Successfully connected to BSC node: {rpc_url}")
+                    if await asyncio.wait_for(self.w3.is_connected(), timeout=3.0):
                         return
-                    else:
-                        logger.warning(f"❌ Failed to connect to {rpc_url} (is_connected=False)")
-                        await self._close_provider(w3.provider)
-                except asyncio.TimeoutError:
-                    logger.warning(f"❌ Connection timeout for {rpc_url}")
-                    await self._close_provider(w3.provider)
-            except Exception as e:
-                logger.warning(f"❌ Error connecting to {rpc_url}: {e}")
-                if w3:
-                    await self._close_provider(w3.provider)
+                except Exception:
+                    pass
+
+            # Reload config to pick up new nodes if changed
+            self.config = self.load_config(self.config_path)
+
+            # Close existing connection if any
+            if self.w3:
+                await self._close_provider(self.w3.provider)
+
+            # 1. Get RPC list from Env or Config
+            rpc_urls = []
+            
+            env_rpc = os.getenv("BSC_WS_RPC")
+            if env_rpc:
+                rpc_urls.append(env_rpc)
                 
-        # If loop finishes without return, all failed
-        logger.error("All RPC connections failed")
-        raise ConnectionError("Web3 connection failed for all provided RPCs")
+            # Check execute nodes first (usually better quality)
+            execute_nodes = self.config.get("nodes", {}).get("execute", [])
+            if execute_nodes:
+                 if isinstance(execute_nodes, list):
+                     rpc_urls.extend(execute_nodes)
+                 elif isinstance(execute_nodes, str):
+                     rpc_urls.append(execute_nodes)
+
+            # Then private_rpcs
+            config_rpcs = self.config.get("network", {}).get("private_rpcs", [])
+            if isinstance(config_rpcs, str):
+                rpc_urls.append(config_rpcs)
+            elif isinstance(config_rpcs, list):
+                rpc_urls.extend(config_rpcs)
+                
+            # Fallback to public RPCs if list is empty
+            if not rpc_urls:
+                rpc_urls = [
+                    "https://bsc-dataseed1.binance.org",
+                    "https://bsc-dataseed2.binance.org", 
+                    "https://1rpc.io/bnb",
+                    "https://bscrpc.com"
+                ]
+            
+            # Deduplicate while preserving order
+            seen = set()
+            unique_rpc_urls = []
+            for url in rpc_urls:
+                if url and url not in seen:
+                    unique_rpc_urls.append(url)
+                    seen.add(url)
+            rpc_urls = unique_rpc_urls
+                
+            logger.info(f"Trying to connect to BSC nodes, {len(rpc_urls)} available...")
+            
+            for rpc_url in rpc_urls:
+                w3 = None
+                try:
+                    if rpc_url.startswith("http"):
+                        provider = AsyncWeb3.AsyncHTTPProvider(rpc_url, request_kwargs={'timeout': 10})
+                        w3 = AsyncWeb3(provider)
+                        logger.info(f"Connecting to HTTP RPC: {rpc_url}")
+                    else:
+                        w3 = AsyncWeb3(AsyncWeb3.WebSocketProvider(rpc_url, websocket_kwargs={'timeout': 10}))
+                        logger.info(f"Connecting to WebSocket RPC: {rpc_url}")
+                    
+                    w3.middleware_onion.inject(ExtraDataToPOAMiddleware, layer=0)
+                    
+                    # Check connection with timeout
+                    try:
+                        if await asyncio.wait_for(w3.is_connected(), timeout=10.0):
+                            self.w3 = w3
+                            logger.success(f"✅ Successfully connected to BSC node: {rpc_url}")
+                            return
+                        else:
+                            logger.warning(f"❌ Failed to connect to {rpc_url} (is_connected=False)")
+                            await self._close_provider(w3.provider)
+                    except asyncio.TimeoutError:
+                        logger.warning(f"❌ Connection timeout for {rpc_url}")
+                        await self._close_provider(w3.provider)
+                except Exception as e:
+                    logger.warning(f"❌ Error connecting to {rpc_url}: {e}")
+                    if w3:
+                        await self._close_provider(w3.provider)
+                    
+                    # If rate limited (429), pause briefly to be polite
+                    if "429" in str(e) or "Too Many Requests" in str(e):
+                        await asyncio.sleep(1.0)
+                    
+            # If loop finishes without return, all failed
+            logger.error("All RPC connections failed")
+            raise ConnectionError("Web3 connection failed for all provided RPCs")
 
     async def get_token_info(self, token_address: str) -> Optional[Dict[str, Any]]:
         """获取代币基本信息（multicall 单次 RPC 完成 4 个查询）"""
@@ -405,53 +449,39 @@ class PairListener:
         try:
             args = event["args"]
             
-            # 处理 Four.Meme TokenCreate 事件
-            if dex_name == "four_meme":
-                pair_address = args["token"] # 对于 Four.Meme，pair即token本身
-                target_token = args["token"]
-                deployer = args["creator"]
-                
-                # 转换为 Checksum 地址
-                pair_address = Web3.to_checksum_address(pair_address)
-                target_token = Web3.to_checksum_address(target_token)
-                deployer = Web3.to_checksum_address(deployer)
-                
+            # 处理 Four.Meme TokenCreate 事件 → 直接入处理队列
+            # 链上验证: topic0=0x396d5e..., 所有参数非indexed, data=384bytes
+            if dex_name == "four_meme" and factory_type == "TokenCreate":
+                token_address = Web3.to_checksum_address(args["token"])
+                deployer = Web3.to_checksum_address(args["creator"])
                 tx_hash = event["transactionHash"].hex()
                 block_number = event["blockNumber"]
-                
-                logger.info(f"[{dex_name}] 发现新Token: {target_token} | Deployer: {deployer} | Tx: {tx_hash}")
-                
-                # 获取Token信息
-                token_info = await self.get_token_info(target_token)
-                
-                if not token_info:
-                     logger.warning(f"[{dex_name}] 无法获取代币信息，跳过")
-                     return
 
-                # 竞争分析 (通用)
-                # 获取区块时间以计算延迟
-                try:
-                    block = await self.w3.eth.get_block(block_number)
-                    block_timestamp = block["timestamp"]
-                    discovery_latency = (datetime.now().timestamp() - block_timestamp) * 1000
-                    logger.info(f"[{dex_name}] Discovery Latency: {discovery_latency:.2f} ms")
-                except Exception as e:
-                    logger.warning(f"Failed to calculate latency: {e}")
-                    discovery_latency = 0
+                if token_address in self.processed_tokens:
+                    return
+                self.processed_tokens.add(token_address)
+
+                logger.info(f"[four_meme] 发现新Token: {token_address} | Deployer: {deployer}")
+
+                token_info = await self.get_token_info(token_address)
+                if not token_info:
+                    logger.warning(f"[four_meme] 无法获取Token信息，跳过: {token_address}")
+                    return
 
                 competition = await self.analyze_competition(tx_hash, block_number)
-                
-                # 记录部署者
+
                 async with aiosqlite.connect(self.db_path) as db:
                     await db.execute(
                         "INSERT INTO deployer_history (deployer, pair_address, created_at) VALUES (?, ?, ?)",
-                        (deployer, pair_address, datetime.now())
+                        (deployer, token_address, datetime.now())
                     )
                     await db.commit()
 
-                # 启动后台检查
+                # observe_liquidity for four_meme returns True immediately (bonding curve)
+                # pair_address 传 "" 而非 token_address，防止 position_manager 把 token
+                # 合约当作 swap pair 来订阅 Swap 事件
                 asyncio.create_task(self._async_liquidity_check(
-                    pair_address, target_token, dex_name, token_info, competition, deployer
+                    "", token_address, "four_meme", token_info, competition, deployer
                 ))
                 return
 
@@ -643,8 +673,9 @@ class PairListener:
                                 # PoolCreated(address,address,uint24,int24,address)
                                 topic0 = "0x783cca1c0412dd0d695e784568c96da2e9c22ff989357a2e8bb13300545c71ed"
                             elif event_name == "TokenCreate":
-                                # TokenCreate(address,address)
-                                topic0 = "0xef0c04052959ad172ea72063a1012a3986aa06f24a6f4c41eb46103b9583390c"
+                                # TokenCreate(address,address,uint256,string,string,uint256,uint256,uint256)
+                                # Verified on-chain: all params non-indexed, 384 bytes data
+                                topic0 = FOUR_MEME_TOKEN_CREATE_TOPIC
                                 
                             if topic0:
                                 # Ensure block range is valid (fromBlock <= toBlock)
@@ -684,6 +715,7 @@ class PairListener:
                                                 event_data = factory_contract.events.PoolCreated().process_log(log)
                                             elif event_name == "TokenCreate":
                                                 event_data = factory_contract.events.TokenCreate().process_log(log)
+                                            # Listed event removed: 0x7db/0x0a55 are trade events not graduation
                                         except Exception as decode_err:
                                             # logger.warning(f"[{dex_name}] Log decode failed: {decode_err}")
                                             continue
@@ -762,7 +794,7 @@ class PairListener:
         if dex_config.get("biswap", True):
             tasks.append(self.monitor_dex(BISWAP_FACTORY, BISWAP_FACTORY_ABI, "biswap", "PairCreated"))
 
-        # Always enable Four.Meme for now or check config
+        # four_meme: only TokenCreate (graduation/Listed event not confirmed on-chain)
         if dex_config.get("four_meme", True):
             tasks.append(self.monitor_dex(FOUR_MEME_FACTORY, FOUR_MEME_FACTORY_ABI, "four_meme", "TokenCreate"))
             

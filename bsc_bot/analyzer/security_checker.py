@@ -816,8 +816,178 @@ class SecurityChecker:
         logger.info(f"⏱️ [local_checks] step1_deployer_db={dur1:.0f}ms step2_mem={dur2:.0f}ms step3_get_code={dur3:.0f}ms step4_simulate={dur4:.0f}ms 总={(time.perf_counter()-t0)*1000:.0f}ms")
         return out
 
-    async def analyze(self, token_address: str, deployer_address: str, pair_address: str = None, initial_state: Dict[str, Any] = None) -> Dict[str, Any]:
+    async def _analyze_four_meme(self, token_address: str, deployer_address: str) -> Dict[str, Any]:
+        """Four.Meme 专用分析逻辑
+
+        基础分 75（已考虑平台特性）：
+        - 合约未开源：平台统一模板，不扣分
+        - 权限未放弃：平台机制，不扣分
+        - 流动性未锁定：bonding curve 机制，不扣分
+        只检测真正有意义的风险：貔貅、税率、持仓集中、黑名单
+        0 分仅在确认貔貅时出现。
+        """
+        start_time = time.time()
+        token_address = token_address.lower()
+        deployer_address = (deployer_address or "").lower()
+        FOUR_MEME_CONTRACT = "0x5c952063c7fc8610ffdb798152d69f0b9550762b"
+
+        logger.info(f"[four_meme] 开始分析: {token_address[:10]}...")
+
+        result = {
+            "token_address": token_address,
+            "final_score": 75,
+            "decision": "reject",
+            "risk_items": [],
+            "bonus_items": [],
+            "raw_data": {},
+            "analysis_time": 0,
+            "platform": "four_meme"
+        }
+
+        # 基础分 75，反映平台已做基础筛选
+        score = 75
+        risk_items = []
+        bonus_items = []
+
+        # ── 1. deployer 黑名单（硬拒绝）──
+        if deployer_address:
+            try:
+                bl_reason = await self.blacklist_manager.check_deployer(deployer_address)
+                if bl_reason:
+                    score = 0
+                    risk_items.append({"desc": f"Deployer 黑名单: {bl_reason}", "score": -100})
+                    logger.warning(f"[four_meme] Deployer 黑名单拒绝: {deployer_address[:10]}")
+                    result["raw_data"]["blacklist"] = bl_reason
+                    result["final_score"] = 0
+                    result["decision"] = "reject"
+                    result["risk_items"] = risk_items
+                    result["analysis_time"] = time.time() - start_time
+                    return result
+            except Exception as e:
+                logger.warning(f"[four_meme] 黑名单检查失败(跳过): {e}")
+
+        # ── 2. 貔貅检测（并行）──
+        honeypot_res = {}
+        goplus_res = {}
+        try:
+            honeypot_res, goplus_res = await asyncio.gather(
+                self.check_honeypot_is(token_address),
+                self.check_goplus(token_address),
+                return_exceptions=False
+            )
+        except Exception as e:
+            logger.warning(f"[four_meme] 貔貅/GoPlus 检测异常(跳过): {e}")
+
+        # Honeypot.is 确认貔貅 → 硬拒绝，score=0
+        if honeypot_res.get("isHoneypot"):
+            issue = honeypot_res.get("honeypotResult", {}).get("issue", "未知原因")
+            score = 0
+            risk_items.append({"desc": f"Honeypot.is 确认貔貅: {issue}", "score": -100})
+            logger.warning(f"[four_meme] 确认貔貅: {token_address[:10]} issue={issue}")
+            result["raw_data"]["honeypot"] = honeypot_res
+            result["final_score"] = 0
+            result["decision"] = "reject"
+            result["risk_items"] = risk_items
+            result["analysis_time"] = time.time() - start_time
+            return result
+
+        # GoPlus 确认貔貅 → 硬拒绝，score=0
+        if goplus_res and int(goplus_res.get("is_honeypot", 0)) == 1:
+            score = 0
+            risk_items.append({"desc": "GoPlus 确认貔貅", "score": -100})
+            logger.warning(f"[four_meme] GoPlus 确认貔貅: {token_address[:10]}")
+            result["raw_data"]["goplus"] = goplus_res
+            result["final_score"] = 0
+            result["decision"] = "reject"
+            result["risk_items"] = risk_items
+            result["analysis_time"] = time.time() - start_time
+            return result
+
+        result["raw_data"]["honeypot"] = honeypot_res
+        result["raw_data"]["goplus"] = goplus_res
+
+        # ── 3. 税率检测（GoPlus 或 Honeypot.is）──
+        try:
+            # GoPlus tax (decimal format: 0.05 = 5%)
+            buy_tax = float(goplus_res.get("buy_tax", 0) or 0) * 100
+            sell_tax = float(goplus_res.get("sell_tax", 0) or 0) * 100
+
+            # Fallback to Honeypot.is simulation
+            if buy_tax == 0 and sell_tax == 0 and honeypot_res:
+                sim = honeypot_res.get("simulationResult", {})
+                buy_tax = float(sim.get("buyTax", 0) or 0)
+                sell_tax = float(sim.get("sellTax", 0) or 0)
+
+            if buy_tax > 20 or sell_tax > 20:
+                deduct = -30
+                score += deduct
+                risk_items.append({"desc": f"税率过高 (买:{buy_tax:.1f}% 卖:{sell_tax:.1f}%)", "score": deduct})
+            elif buy_tax > 10 or sell_tax > 10:
+                deduct = -15
+                score += deduct
+                risk_items.append({"desc": f"税率偏高 (买:{buy_tax:.1f}% 卖:{sell_tax:.1f}%)", "score": deduct})
+        except Exception as e:
+            logger.warning(f"[four_meme] 税率解析失败(跳过): {e}")
+
+        # ── 4. 持仓集中度（排除平台合约地址）──
+        try:
+            holders_data = await self.analyze_token_holders(
+                token_address, deployer_address,
+                pair_address=FOUR_MEME_CONTRACT  # 排除 bonding curve 合约
+            )
+            if holders_data:
+                max_share = holders_data.get("max_single_share", 0)
+                top_5 = holders_data.get("top_5_share", 0)
+                # 新币早期单一持仓 >15% 才算风险（宽松于普通代币的10%）
+                if max_share > 15:
+                    deduct = -20
+                    score += deduct
+                    risk_items.append({"desc": f"单一巨鲸持仓 {max_share:.1f}%", "score": deduct})
+                if top_5 > 50:
+                    deduct = -10
+                    score += deduct
+                    risk_items.append({"desc": f"前5持仓集中 {top_5:.1f}%", "score": deduct})
+                result["raw_data"]["holders"] = {"max_single_share": max_share, "top_5_share": top_5}
+        except Exception as e:
+            logger.warning(f"[four_meme] 持仓分析失败(跳过): {e}")
+
+        # ── 5. 加分项：社交媒体 ──
+        try:
+            # four.meme 合约基本都未开源，跳过 BscScan 获取，直接检查 GoPlus 里的信息
+            # 如果 GoPlus 返回了 token 信息说明已有基础数据
+            if goplus_res.get("token_name") or goplus_res.get("token_symbol"):
+                score += 5
+                bonus_items.append({"desc": "GoPlus 已收录代币信息", "score": +5})
+        except Exception as e:
+            logger.warning(f"[four_meme] 加分项检查失败(跳过): {e}")
+
+        # ── 6. 评分区间限制 ──
+        score = max(0, min(100, score))
+
+        # ── 7. 决策 ──
+        if score >= 75:
+            decision = "buy"
+        elif score >= 60:
+            decision = "half_buy"
+        else:
+            decision = "reject"
+
+        result["final_score"] = score
+        result["decision"] = decision
+        result["risk_items"] = risk_items
+        result["bonus_items"] = bonus_items
+        result["analysis_time"] = time.time() - start_time
+
+        logger.info(f"[four_meme] 分析完成: {token_address[:10]}... Score={score} Decision={decision}"
+                    + (f" 风险: {[r['desc'] for r in risk_items]}" if risk_items else ""))
+        return result
+
+    async def analyze(self, token_address: str, deployer_address: str, pair_address: str = None, initial_state: Dict[str, Any] = None, platform: str = None) -> Dict[str, Any]:
         """执行完整安全分析（全并行版：本地检测与外部API同时发起）"""
+        
+        if platform == 'four_meme':
+             return await self._analyze_four_meme(token_address, deployer_address)
+
         start_time = time.time()
         t_perf = time.perf_counter()
         token_address = token_address.lower()

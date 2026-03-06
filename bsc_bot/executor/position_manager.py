@@ -34,6 +34,7 @@ class Position:
     buy_gas_price: int = 0  # Gas Price at buy time (wei)
     fetch_fail_count: int = 0 # Consecutive price fetch failures
     last_update_time: float = 0.0 # Timestamp of last price update
+    dex_name: str = None # DEX Name (pancakeswap_v2, four_meme, etc.)
     
     # DexScreener Data
     volume_24h: float = 0.0
@@ -46,6 +47,7 @@ class Position:
     # Flags
     first_check_done: bool = False # Flag for 2-min quick assessment
     passed_honeypot_check: bool = False  # 延迟貔貅检测标记（2分钟时触发一次）
+    has_real_price: bool = False  # 是否已获取过真实市场价（非买入估算价）
     tp_100_done: bool = False
     tp_200_done: bool = False
     tp_400_done: bool = False
@@ -169,6 +171,8 @@ class PositionManager:
                     await db.execute(f"ALTER TABLE {self.positions_table} ADD COLUMN pair_address TEXT DEFAULT ''")
                 if "initial_liquidity_bnb" not in columns:
                     await db.execute(f"ALTER TABLE {self.positions_table} ADD COLUMN initial_liquidity_bnb REAL DEFAULT 0.0")
+                if "dex_name" not in columns:
+                    await db.execute(f"ALTER TABLE {self.positions_table} ADD COLUMN dex_name TEXT")
             except Exception as e:
                 logger.warning(f"Migration check failed, running legacy migration: {e}")
                 try:
@@ -186,6 +190,9 @@ class PositionManager:
                     if "pair_address" not in columns:
                         logger.info(f"Migrating {self.positions_table} table: adding pair_address")
                         await db.execute(f"ALTER TABLE {self.positions_table} ADD COLUMN pair_address TEXT DEFAULT ''")
+                    if "dex_name" not in columns:
+                        logger.info(f"Migrating {self.positions_table} table: adding dex_name")
+                        await db.execute(f"ALTER TABLE {self.positions_table} ADD COLUMN dex_name TEXT")
                 except Exception as e2:
                     logger.warning(f"Legacy migration also failed: {e2}")
                 
@@ -218,7 +225,8 @@ class PositionManager:
                             pair_address=row_dict.get('pair_address', '') or '',
                             current_price=row_dict.get('current_price', 0.0) or 0.0,
                             pnl_percentage=row_dict.get('pnl_percentage', 0.0) or 0.0,
-                            initial_liquidity_bnb=row_dict.get('initial_liquidity_bnb', 0.0) or 0.0
+                            initial_liquidity_bnb=row_dict.get('initial_liquidity_bnb', 0.0) or 0.0,
+                            dex_name=row_dict.get('dex_name')
                         )
                         # Recalculate values if needed
                         pos.current_value_bnb = pos.token_amount * pos.current_price
@@ -232,7 +240,7 @@ class PositionManager:
         except Exception as e:
             logger.error(f"恢复仓位失败: {e}")
 
-    async def add_position(self, token_address, token_name, buy_price, buy_amount_bnb, token_amount, buy_gas_price=0, dex_data=None, pair_address="", initial_liquidity_bnb=0.0):
+    async def add_position(self, token_address, token_name, buy_price, buy_amount_bnb, token_amount, buy_gas_price=0, dex_data=None, pair_address="", initial_liquidity_bnb=0.0, dex_name=None):
         """添加新仓位"""
         # 每日风控检查
         if not self._check_daily_risk_allow_buy():
@@ -252,7 +260,8 @@ class PositionManager:
             buy_gas_price=buy_gas_price,
             pair_address=pair_address,
             initial_liquidity_bnb=initial_liquidity_bnb,
-            liquidity_bnb=initial_liquidity_bnb
+            liquidity_bnb=initial_liquidity_bnb,
+            dex_name=dex_name
         )
         
         if dex_data:
@@ -282,12 +291,12 @@ class PositionManager:
             async with aiosqlite.connect(self.db_path) as db:
                 await db.execute(f"""
                     INSERT OR REPLACE INTO {self.positions_table}
-                    (token_address, token_name, buy_price_bnb, buy_amount_bnb, token_amount, buy_time, highest_price, sold_portions, status, buy_gas_price, pair_address, current_price, pnl_percentage, initial_liquidity_bnb)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (token_address, token_name, buy_price_bnb, buy_amount_bnb, token_amount, buy_time, highest_price, sold_portions, status, buy_gas_price, pair_address, current_price, pnl_percentage, initial_liquidity_bnb, dex_name)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     pos.token_address, pos.token_name, pos.buy_price_bnb, pos.buy_amount_bnb,
                     pos.token_amount, pos.buy_time, pos.highest_price, json.dumps(pos.sold_portions), pos.status, pos.buy_gas_price,
-                    pos.pair_address, pos.current_price, pos.pnl_percentage, pos.initial_liquidity_bnb
+                    pos.pair_address, pos.current_price, pos.pnl_percentage, pos.initial_liquidity_bnb, pos.dex_name
                 ))
                 await db.commit()
         except Exception as e:
@@ -480,26 +489,54 @@ class PositionManager:
             pos.source = "dexscreener"
             source = "dexscreener"
         else:
-            try:
-                price_info, err = await self._get_price_onchain(token_addr)
-                if price_info:
-                    price_bnb = price_info.get('price_bnb', 0.0)
-                    liquidity_bnb = price_info.get('liquidity_bnb', 0.0)
-                    source = "on_chain"
-                elif err == "network":
-                    logger.warning(f"{pos.token_name}: 链上查询失败(网络)，跳过")
+            # four_meme: bonding curve，不走 PancakeSwap，用 DexScreener 单次查询
+            if pos.dex_name == "four_meme":
+                try:
+                    price_info, _ = await self._get_four_meme_price_onchain(token_addr)
+                    if price_info and price_info.get("price_bnb", 0) > 0:
+                        price_bnb = price_info["price_bnb"]
+                        liquidity_bnb = price_info.get("liquidity_bnb", 0.0)
+                        source = "dexscreener_single"
+                except Exception as e:
+                    logger.debug(f"[four_meme] 价格查询失败 {token_addr}: {e}")
+            else:
+                try:
+                    price_info, err = await self._get_price_onchain(token_addr)
+                    if price_info:
+                        price_bnb = price_info.get('price_bnb', 0.0)
+                        liquidity_bnb = price_info.get('liquidity_bnb', 0.0)
+                        source = "on_chain"
+                    elif err == "network":
+                        logger.warning(f"{pos.token_name}: 链上查询失败(网络)，跳过")
+                        pos.fetch_fail_count += 1
+                        return
+                    elif err == "onchain_empty":
+                        price_bnb = 0.0
+                        liquidity_bnb = 0.0
+                        source = "on_chain_empty"
+                except Exception as e:
+                    logger.warning(f"链上价格回退异常 {token_addr}: {e}")
                     pos.fetch_fail_count += 1
                     return
-                elif err == "onchain_empty":
-                    price_bnb = 0.0
-                    liquidity_bnb = 0.0
-                    source = "on_chain_empty"
-            except Exception as e:
-                logger.warning(f"链上价格回退异常 {token_addr}: {e}")
-                pos.fetch_fail_count += 1
-                return
 
         pos.fetch_fail_count = 0
+
+        # 价格为 0：优先使用 Position 上次成功获取的价格（最多容忍 10 分钟陈旧）
+        STALE_PRICE_MAX_AGE = 600  # 秒
+        if price_bnb <= 0:
+            last_price = pos.current_price
+            last_update = pos.last_update_time
+            age = time.time() - last_update if last_update > 0 else float('inf')
+            if last_price > 0 and age < STALE_PRICE_MAX_AGE:
+                logger.debug(
+                    f"{pos.token_name}: 使用历史价格 {last_price:.2e} BNB (陈旧 {age:.0f}s)，仅做策略判断"
+                )
+                # 仅跑策略，不刷新 last_update_time（避免把陈旧时钟重置为 now）
+                await self._check_strategies(pos, last_price, liquidity_bnb)
+            else:
+                logger.debug(f"{pos.token_name}: 价格获取失败且无可用历史价格，跳过本轮策略判断")
+            return
+
         await self._update_position_price(pos, price_bnb, source, liquidity_bnb)
         await self._check_strategies(pos, price_bnb, liquidity_bnb)
         
@@ -511,6 +548,9 @@ class PositionManager:
         """Helper to update position price"""
         pos.update_price(price_bnb)
         pos.source = source
+        # 标记已获取真实市场价（非买入时的估算价）
+        if source not in ("init",) and price_bnb > 0:
+            pos.has_real_price = True
         # Persist to DB? User said "store in database". 
         # Maybe update DB periodically or on important events.
         # For performance, maybe not every tick. But let's leave it in memory for now, 
@@ -544,6 +584,13 @@ class PositionManager:
 
         # ===== 阶段二：2分钟时，延迟貔貅检测 =====
         if not pos.passed_honeypot_check:
+            # 2分钟评估要求真实市场价（has_real_price=True）。
+            # 买入时的估算价（totalSupply推算）不代表市场行情，用它评估会导致误判。
+            if not pos.has_real_price:
+                logger.debug(f"{pos.token_name}: 2分钟评估延迟，尚未获取真实市场价")
+                # 不标记 passed_honeypot_check，下轮价格到位后再评估
+                return
+
             pos.passed_honeypot_check = True  # 只触发一次
 
             init_liq = pos.initial_liquidity_bnb
@@ -560,11 +607,20 @@ class PositionManager:
                 return
 
             # 情况二：pnl < 20% 且 流动性增长 < 10% → 无热度，离场
-            if pnl < 20 and liq_change_pct < 10:
-                logger.info(f"{pos.token_name}: 2分钟无热度 "
-                           f"pnl={pnl:.1f}% liq_chg={liq_change_pct:.1f}%，离场")
-                await self._execute_sell(pos, 100, 'no_momentum_2min')
-                return
+            # four_meme: init_liq=0（bonding curve 无初始流动性记录），跳过流动性维度，仅看 pnl
+            is_four_meme = (pos.dex_name == "four_meme")
+            if pnl < 20 and (liq_change_pct < 10 or is_four_meme and init_liq == 0):
+                if is_four_meme and init_liq == 0:
+                    # four_meme 无初始流动性基准，只靠 pnl 判断
+                    if pnl < 20:
+                        logger.info(f"{pos.token_name}: [four_meme] 2分钟pnl={pnl:.1f}%不足，离场")
+                        await self._execute_sell(pos, 100, 'no_momentum_2min')
+                        return
+                else:
+                    logger.info(f"{pos.token_name}: 2分钟无热度 "
+                               f"pnl={pnl:.1f}% liq_chg={liq_change_pct:.1f}%，离场")
+                    await self._execute_sell(pos, 100, 'no_momentum_2min')
+                    return
 
             # 情况三：pnl >= 20% 或 流动性增长 >= 10% → 有热度，继续持有
             logger.info(f"{pos.token_name}: 2分钟评估通过，继续持有")
@@ -701,6 +757,25 @@ class PositionManager:
             return None, "network"
 
 
+
+    async def _get_four_meme_price_onchain(self, token_address: str) -> Tuple[Optional[dict], str]:
+        """
+        four.meme bonding curve 价格查询。
+        factory 的链上函数选择器未知，直接用 DexScreener 单次查询。
+        对已毕业代币，_get_price_onchain（PancakeSwap pair）会先于本函数命中，
+        故本函数只处理仍在 bonding curve 阶段的代币。
+        """
+        try:
+            from bsc_bot.utils.dexscreener_client import get_token_data
+            dex_data = await get_token_data(token_address)
+            if dex_data and dex_data.get("price_bnb", 0) > 0:
+                return {
+                    "price_bnb": dex_data["price_bnb"],
+                    "liquidity_bnb": dex_data.get("liquidity_bnb", 0.0),
+                }, "none"
+        except Exception as e:
+            logger.debug(f"[four_meme] DexScreener查询异常 {token_address}: {e}")
+        return None, "onchain_empty"
 
     async def _get_tg_session(self) -> aiohttp.ClientSession:
         """获取或创建 Telegram 通知用的持久化 session"""
@@ -896,7 +971,8 @@ class PositionManager:
                 simulated_balance=pos.token_amount,
                 manual_price=pos.current_price,
                 sell_percentage_real=real_pct_1,
-                cost_basis_bnb=cost_basis_1
+                cost_basis_bnb=cost_basis_1,
+                dex_name=pos.dex_name
             )
             await asyncio.sleep(5)
             
@@ -912,7 +988,8 @@ class PositionManager:
                 simulated_balance=remaining_sim,
                 manual_price=pos.current_price,
                 sell_percentage_real=real_pct_2,
-                cost_basis_bnb=cost_basis_2
+                cost_basis_bnb=cost_basis_2,
+                dex_name=pos.dex_name
             )
             res = res2
             total_bnb = float(res1.get("amount_bnb", 0)) + float(res2.get("amount_bnb", 0))
@@ -929,7 +1006,8 @@ class PositionManager:
                 simulated_balance=pos.token_amount,
                 manual_price=pos.current_price,
                 sell_percentage_real=real_pct,
-                cost_basis_bnb=cost_basis
+                cost_basis_bnb=cost_basis,
+                dex_name=pos.dex_name
             )
         
         if res["status"] == "success":

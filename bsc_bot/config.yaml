@@ -26,16 +26,17 @@ network:
   nodes:
     execute:
     - https://bsc-rpc.publicnode.com
-    - https://bsc.drpc.org
-    - https://bscrpc.com
-    - https://bsc-dataseed1.defibit.io
-    - https://bsc-dataseed2.defibit.io
+    - https://1rpc.io/bnb
+    - https://rpc.ankr.com/bsc
+    - https://binance.llamarpc.com
+    - https://bsc-dataseed1.binance.org
+    - https://bsc-dataseed2.binance.org
     primary: https://bsc-rpc.publicnode.com
   polling_interval: 1
   private_rpcs:
   - https://bsc-rpc.publicnode.com
-  - https://bsc.drpc.org
-  - https://bscrpc.com
+  - https://1rpc.io/bnb
+  - https://rpc.ankr.com/bsc
   proxy:
     enabled: true
     http: http://127.0.0.1:10809
@@ -98,6 +99,18 @@ position_management:
 trading:
   buy_amount: 0.1
   deadline_seconds: 45
+
+four_meme:
+  enabled: true
+  contract: "0x5c952063c7fc8610FFDB798152D69F0B9550762b"
+  min_score: 75
+  buy_amount: 0.05
+  min_liquidity: 3
+  skip_observation: true
+  pre_analyze: true
+  skip_checks:
+    - liquidity_locked
+    - deployer_source
   gas:
     default_limit: 300000
     frontrun_multiplier: 1.5

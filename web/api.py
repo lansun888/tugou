@@ -304,7 +304,8 @@ def _build_positions_list():
                 "market_cap": getattr(pos, "market_cap", 0.0),
                 "txns_5m_buys": getattr(pos, "txns_5m_buys", 0),
                 "txns_5m_sells": getattr(pos, "txns_5m_sells", 0),
-                "source": getattr(pos, "source", "unknown")
+                "source": getattr(pos, "source", "unknown"),
+                "dex_name": getattr(pos, "dex_name", None)
             })
     except Exception as e:
         logger.error(f"Error getting positions: {e}", exc_info=True)

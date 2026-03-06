@@ -259,6 +259,7 @@ const Trades = () => {
       const pnlPercent = totalBuyBnb > 0 ? (totalPnlBnb / totalBuyBnb) * 100 : null;
       const latestTs = sorted.length > 0 ? sorted[0]._ts : 0;
       const hasDelayedHoneypot = sells.some(t => isDelayedHoneypot(t.close_reason));
+      const isFourMeme = sorted.some(t => t.dex_name === 'four_meme');
       return {
         ...group,
         trades: sorted,
@@ -267,7 +268,8 @@ const Trades = () => {
         totalPnlBnb,
         pnlPercent,
         latestTs,
-        hasDelayedHoneypot
+        hasDelayedHoneypot,
+        isFourMeme
       };
     });
 
@@ -437,6 +439,9 @@ const Trades = () => {
                                 <div className="flex items-center gap-3">
                                   {expanded ? <ChevronDownIcon className="w-4 h-4 text-gray-500" /> : <ChevronRightIcon className="w-4 h-4 text-gray-500" />}
                                   <span className="font-semibold text-gray-900">{group.token_symbol}</span>
+                                  {group.isFourMeme && (
+                                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-700 border border-purple-200" title="Four.meme Platform">4M</span>
+                                  )}
                                   {group.hasDelayedHoneypot && (
                                     <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-purple-100 text-purple-700 border border-purple-200" title="该币在2分钟评估时被判定为延迟貔貅">🎭 延迟貔貅</span>
                                   )}
@@ -489,10 +494,15 @@ const Trades = () => {
                                   </div>
                                 </td>
                                 <td className="py-3 px-4">
-                                  <Badge color={badge.color} size="xs" className={badge.className}>
-                                    {badge.text}
-                                    {trade.trade_type === 'simulation' && <span className="ml-1 text-[10px] opacity-70">模拟</span>}
-                                  </Badge>
+                                  <div className="flex items-center gap-1">
+                                    <Badge color={badge.color} size="xs" className={badge.className}>
+                                      {badge.text}
+                                      {trade.trade_type === 'simulation' && <span className="ml-1 text-[10px] opacity-70">模拟</span>}
+                                    </Badge>
+                                    {trade.dex_name === 'four_meme' && (
+                                      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-700 border border-purple-200" title="Four.meme Platform">4M</span>
+                                    )}
+                                  </div>
                                 </td>
                                 <td className="py-3 px-4 text-right font-mono">
                                   {formatNumber(trade.amount_token)}
