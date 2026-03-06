@@ -236,6 +236,11 @@ const PositionCard = ({ pos, onSell }) => {
   else if (soldPercent >= 50) soldBadge = <Badge color="yellow" size="xs">已卖出 {soldPercent.toFixed(0)}%</Badge>;
   else if (soldPercent >= 25) soldBadge = <Badge color="emerald" size="xs">已卖出 {soldPercent.toFixed(0)}%</Badge>;
 
+  // 2分钟貔貅评估期标识
+  const buyTs = pos.buy_time ? (pos.buy_time < 1e11 ? pos.buy_time * 1000 : pos.buy_time) : 0;
+  const holdingMs = buyTs > 0 ? Date.now() - buyTs : Infinity;
+  const inHoneypotCheckWindow = holdingMs < 2 * 60 * 1000; // < 2分钟
+
   // 代币头像：取第一个 ASCII 字符，跳过中文避免样式混乱
   const tokenInitial = getTokenInitial(pos.token_symbol, pos.token_name);
   
@@ -304,6 +309,9 @@ const PositionCard = ({ pos, onSell }) => {
               <Text className="text-white font-bold text-lg flex items-center gap-2">
                 {pos.token_symbol || pos.token_name}
                 {isSuperProfitable && <span className="text-xs">🚀</span>}
+                {inHoneypotCheckWindow && (
+                  <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-900/50 text-amber-300 border border-amber-700/50" title="买入后2分钟内，正在进行延迟貔貅评估">⏳ 2min评估中</span>
+                )}
                 {soldBadge}
               </Text>
               <GmgnLink address={pos.token_address} />

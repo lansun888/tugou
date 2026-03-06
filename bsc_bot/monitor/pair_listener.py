@@ -11,6 +11,7 @@ from loguru import logger
 from dotenv import load_dotenv
 import os
 from .abis import PANCAKESWAP_V2_FACTORY_ABI, PANCAKESWAP_V3_FACTORY_ABI, BISWAP_FACTORY_ABI, FOUR_MEME_FACTORY_ABI, ERC20_ABI
+from bsc_bot.utils.multicall_helper import multicall3_batch
 
 # 加载环境变量
 load_dotenv(override=True)
@@ -22,11 +23,39 @@ PANCAKESWAP_V3_FACTORY = "0x0BFbCF9fa4f9C56B0F40a671Ad40E0805A091865"
 BISWAP_FACTORY = "0x858E3312ed3A876947EA49d572A7C42DE08af7EE"
 FOUR_MEME_FACTORY = "0x5c952063c7fc8610FFDB798152D69F0B9550762b"
 
+class PriorityPairQueue:
+    """异步优先级队列：流动性更高的新币优先处理。
+
+    接口与 asyncio.Queue 相同，put 额外接受 priority 参数。
+    内部使用 asyncio.PriorityQueue（最小堆），存入负流动性使高流动性靠前。
+    """
+
+    def __init__(self):
+        self._pq: asyncio.PriorityQueue = asyncio.PriorityQueue()
+        self._counter = 0  # 相同优先级时保持 FIFO 顺序
+
+    def put(self, pair: dict, priority: float = 0.0) -> None:
+        """非阻塞入队。priority 越大（流动性越高）越先出队。"""
+        self._pq.put_nowait((-priority, self._counter, pair))
+        self._counter += 1
+
+    async def get(self) -> dict:
+        """阻塞出队，返回当前最高优先级的 pair_data。"""
+        _, _, pair = await self._pq.get()
+        return pair
+
+    def qsize(self) -> int:
+        return self._pq.qsize()
+
+    def empty(self) -> bool:
+        return self._pq.empty()
+
+
 class PairListener:
     def __init__(self, config_path: str = "config.yaml", db_path: str = "./data/bsc_bot.db"):
         self.config = self.load_config(config_path)
         self.w3: Optional[AsyncWeb3] = None
-        self.queue = asyncio.Queue()
+        self.queue = PriorityPairQueue()
         self.db_path = db_path
         self.running = False
         
@@ -187,21 +216,21 @@ class PairListener:
         raise ConnectionError("Web3 connection failed for all provided RPCs")
 
     async def get_token_info(self, token_address: str) -> Optional[Dict[str, Any]]:
-        """获取代币基本信息"""
+        """获取代币基本信息（multicall 单次 RPC 完成 4 个查询）"""
         try:
             token_address = Web3.to_checksum_address(token_address)
-            token_contract = self.w3.eth.contract(address=token_address, abi=ERC20_ABI)
-            
-            # 使用 gather 并发获取信息
-            name_task = token_contract.functions.name().call()
-            symbol_task = token_contract.functions.symbol().call()
-            decimals_task = token_contract.functions.decimals().call()
-            supply_task = token_contract.functions.totalSupply().call()
-            
-            name, symbol, decimals, total_supply = await asyncio.gather(
-                name_task, symbol_task, decimals_task, supply_task
-            )
-            
+
+            results = await multicall3_batch(self.w3, [
+                (token_address, "name()",        [], [], ["string"]),
+                (token_address, "symbol()",      [], [], ["string"]),
+                (token_address, "decimals()",    [], [], ["uint8"]),
+                (token_address, "totalSupply()", [], [], ["uint256"]),
+            ])
+            name, symbol, decimals, total_supply = results
+
+            if name is None or symbol is None or decimals is None or total_supply is None:
+                raise ValueError("multicall returned None for one or more fields")
+
             return {
                 "address": token_address,
                 "name": name,
@@ -332,14 +361,18 @@ class PairListener:
                         {"constant":True,"inputs":[],"name":"token0","outputs":[{"internalType":"address","name":"","type":"address"}],"payable":False,"stateMutability":"view","type":"function"}]
             
             pair_contract = self.w3.eth.contract(address=pair_addr, abi=pair_abi)
-            
-            reserves = await pair_contract.functions.getReserves().call()
-            token0 = await pair_contract.functions.token0().call()
+
+            # multicall: getReserves + token0 → 1 RPC
+            mc_results = await multicall3_batch(self.w3, [
+                (pair_addr, "getReserves()", [], [], ["uint112", "uint112", "uint32"]),
+                (pair_addr, "token0()",      [], [], ["address"]),
+            ])
+            reserves, token0 = mc_results[0], mc_results[1]
             
             r0, r1, _ = reserves
             
-            # Determine which is BNB
-            is_token0_wbnb = (token0 == wbnb_addr)
+            # Determine which is BNB (compare lowercase; eth_abi returns lowercase addresses)
+            is_token0_wbnb = token0.lower() == wbnb_addr.lower()
             
             bnb_reserve = r0 if is_token0_wbnb else r1
             token_reserve = r1 if is_token0_wbnb else r0
@@ -496,12 +529,17 @@ class PairListener:
                 "deployer": deployer,
                 "competition": competition,
                 "discovered_at": datetime.now().isoformat(),
-                "initial_price": initial_price
+                "initial_price": initial_price,
+                "liquidity_bnb": liquidity_bnb,   # 用于优先级排队
             }
-            
-            # 入队分析
-            await self.queue.put(pair_data)
-            logger.success(f"[{dex_name}] 新币入库: {token_info['symbol']} ({token_info['address']}) | Price: {initial_price:.8f} BNB")
+
+            # 按流动性优先级入队：流动性越大越先处理
+            self.queue.put(pair_data, priority=liquidity_bnb)
+            logger.success(
+                f"[{dex_name}] 新币入库: {token_info['symbol']} ({token_info['address']}) "
+                f"| Price: {initial_price:.8f} BNB | Liq: {liquidity_bnb:.2f} BNB "
+                f"| Queue: {self.queue.qsize()} pending"
+            )
             
             # 存库
             try:
@@ -546,8 +584,16 @@ class PairListener:
             try:
                 # 检查并修复连接
                 try:
-                    if not self.w3 or not await self.w3.is_connected():
-                        logger.warning(f"[{dex_name}] Web3 连接丢失，尝试重连...")
+                    connected = False
+                    if self.w3:
+                        try:
+                            connected = await self.w3.is_connected()
+                        except Exception as e:
+                            logger.warning(f"[{dex_name}] Web3 连接检查异常: {e}")
+                            connected = False
+                    
+                    if not connected:
+                        logger.warning(f"[{dex_name}] Web3 连接丢失或异常，尝试重连...")
                         await self.setup_web3()
                 except Exception as e:
                     logger.error(f"[{dex_name}] 重连失败: {e}")

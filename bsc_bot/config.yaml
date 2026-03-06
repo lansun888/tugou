@@ -17,52 +17,43 @@ monitor:
   quick_observe_time: 5
 network:
   chain_id: 56
+  direct_connect:
+  - bsc_nodes
+  - bscscan
+  - honeypot
+  - goplus
   name: BSC Mainnet
   nodes:
     execute:
+    - https://bsc-rpc.publicnode.com
+    - https://bsc.drpc.org
+    - https://bscrpc.com
     - https://bsc-dataseed1.defibit.io
     - https://bsc-dataseed2.defibit.io
-    - https://bsc-dataseed1.ninicoin.io
-    - https://bsc.publicnode.com
-    - https://bsc-dataseed1.binance.org
-    - https://binance.ankr.com/bsc
-    - https://rpc.ankr.com/bsc
-    - https://bsc-mainnet.nodereal.io/v1/64a9df0874fb4a93b9d0a3849de012d3
-    - https://1rpc.io/bnb
-    primary: https://bsc-dataseed1.binance.org
+    primary: https://bsc-rpc.publicnode.com
   polling_interval: 1
-  ws_node: "wss://bsc-mainnet.nodereal.io/ws/v1/64a9df0874fb4a93b9d0a3849de012d3"
+  private_rpcs:
+  - https://bsc-rpc.publicnode.com
+  - https://bsc.drpc.org
+  - https://bscrpc.com
   proxy:
     enabled: true
-    http: "http://127.0.0.1:10809"
-    socks5: "socks5://127.0.0.1:10808"
-  # 哪些模块需要走代理
+    http: http://127.0.0.1:10809
+    socks5: socks5://127.0.0.1:10808
   proxy_required:
-    - dexscreener
-    - coingecko
-    - okx
-  # 哪些模块直连（不走代理）
-  direct_connect:
-    - bsc_nodes
-    - bscscan
-    - honeypot
-    - goplus
-  private_rpcs:
-  - https://bsc.publicnode.com
-  - https://bsc-mainnet.nodereal.io/v1/64a9df0874fb4a93b9d0a3849de012d3
-  - https://bsc-dataseed1.binance.org
-  - https://bsc-dataseed2.binance.org
-  - https://bsc-dataseed3.binance.org
-  - https://1rpc.io/bnb
+  - dexscreener
+  - coingecko
+  - okx
   test_mode: true
   tx_timeout: 120
+  ws_node: wss://bsc-mainnet.nodereal.io/ws/v1/64a9df0874fb4a93b9d0a3849de012d3
 notifications:
   enable_telegram: false
   telegram_chat_id: ''
   telegram_token: ''
 position_management:
   daily_risk:
-    max_daily_loss: 0.5
+    max_daily_loss: 1
     profit_threshold_conservative: 1
   max_concurrent_positions: 5
   max_holder_concentration: 30
@@ -93,7 +84,7 @@ position_management:
       - -999
       - 100
   trailing_stop:
-    initial_stop_loss: 50
+    initial_stop_loss: 35
     levels:
     - - 2
       - 50
@@ -112,6 +103,9 @@ trading:
     frontrun_multiplier: 1.5
     mode: normal
     normal_multiplier: 1.15
+  initial_stop_loss: -35
+  protection_period_minutes: 2
+  quick_stop_threshold: -20
   slippage: 12
   slippage_alert_threshold: 15
   stop_loss_percentage: -20

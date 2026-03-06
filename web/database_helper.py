@@ -310,7 +310,39 @@ class DatabaseHelper:
                     else:
                         item['risk_factors'] = []
 
+                    item['is_delayed_honeypot'] = False
                     results.append(item)
+
+                # Detect delayed honeypot: check sold_portions in positions tables
+                bought_items = [r for r in results if r.get('status') == 'bought']
+                if bought_items:
+                    token_addrs = [r['target_token'] for r in bought_items if r.get('target_token')]
+                    delayed_hp_set = set()
+                    for tbl in ('simulation_positions', 'positions'):
+                        try:
+                            placeholders = ','.join(['?'] * len(token_addrs))
+                            async with db.execute(
+                                f"SELECT token_address, sold_portions FROM {tbl} WHERE token_address IN ({placeholders})",
+                                token_addrs
+                            ) as sp_cursor:
+                                for sp_row in await sp_cursor.fetchall():
+                                    addr, sold_json = sp_row[0], sp_row[1]
+                                    if not sold_json:
+                                        continue
+                                    try:
+                                        records = json.loads(sold_json)
+                                        for rec in records:
+                                            if rec.get('reason') in ('liq_drain_2min', 'no_momentum_2min'):
+                                                delayed_hp_set.add(addr.lower())
+                                                break
+                                    except Exception:
+                                        pass
+                        except Exception:
+                            pass
+                    for r in results:
+                        if r.get('target_token', '').lower() in delayed_hp_set:
+                            r['is_delayed_honeypot'] = True
+
                 return results
 
     async def update_pair_analysis(self, pair_address, score, analysis_result, check_details, status, risk_factors):

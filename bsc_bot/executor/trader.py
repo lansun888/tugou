@@ -71,6 +71,9 @@ class BSCExecutor:
         # Locks
         self.bnb_price_lock = asyncio.Lock()
 
+        # 持久化 HTTP session（避免每次 buy 重新建连接）
+        self._http_session: aiohttp.ClientSession = None
+
         
     def _load_config(self, path):
         """加载配置文件"""
@@ -175,6 +178,12 @@ class BSCExecutor:
         await self.node_manager.start_monitoring()
         if self.account:
             await self.refresh_nonce()
+
+        # 6. 创建持久 HTTP session（用于 sendRawTransaction 竞速广播）
+        self._http_session = aiohttp.ClientSession(
+            connector=aiohttp.TCPConnector(limit=20, ttl_dns_cache=300),
+            timeout=aiohttp.ClientTimeout(total=5),
+        )
         
     async def _init_db(self):
         """初始化数据库表"""
@@ -383,12 +392,26 @@ class BSCExecutor:
             else:
                  built_tx = await tx_func.build_transaction(tx_params)
             
-            logger.info(f"Transaction pre-built in {time.time()-t0:.3f}s")
+            # 预签名（非模拟模式）：签名在安全分析并行期间完成，fast_buy 只需广播
+            pre_signed_raw = None
+            if not self.test_mode and self.account:
+                try:
+                    t_sign = time.time()
+                    signed = self.w3.eth.account.sign_transaction(built_tx, private_key=self.account.key)
+                    raw = getattr(signed, 'rawTransaction', None) or getattr(signed, 'raw_transaction', None)
+                    if raw:
+                        pre_signed_raw = raw.hex()
+                        logger.info(f"⏱️ 预签名: {(time.time()-t_sign)*1000:.0f}ms")
+                except Exception as e:
+                    logger.warning(f"预签名失败，fast_buy 将重新签名: {e}")
+
+            logger.info(f"⏱️ pre_build 总计: {(time.time()-t0)*1000:.0f}ms (预签名={'yes' if pre_signed_raw else 'no'})")
             return {
                 "tx": built_tx,
                 "amount_out": expected_token_out,
                 "min_out": min_token_out,
-                "token_address": token_address
+                "token_address": token_address,
+                "pre_signed_raw": pre_signed_raw,
             }
             
         except Exception as e:
@@ -436,58 +459,75 @@ class BSCExecutor:
                     "buy_gas_price": tx_params.get('gasPrice', 0)
                 }
 
-            # Sign
-            signed_tx = self.w3.eth.account.sign_transaction(tx_params, private_key=self.account.key)
-            
-            # Robust extraction of rawTransaction
-            raw_tx_hex = None
-            try:
-                if hasattr(signed_tx, 'rawTransaction'):
-                    raw_tx_hex = signed_tx.rawTransaction.hex()
-                elif hasattr(signed_tx, 'raw_transaction'):
-                    raw_tx_hex = signed_tx.raw_transaction.hex()
-                elif isinstance(signed_tx, dict) and 'rawTransaction' in signed_tx:
-                    raw_tx_hex = signed_tx['rawTransaction'].hex()
-                else:
-                    # Try to access it anyway, if it fails we catch it
-                    raw_tx_hex = signed_tx.rawTransaction.hex()
-            except Exception as e:
-                logger.error(f"Failed to extract rawTransaction from {type(signed_tx)}: {e}")
-                # Fallback: maybe signed_tx IS the raw transaction hex? Unlikely.
-                raise e
-            
-            # Send via Best Node
-            best_node = self.node_manager.get_best_node()
-            logger.info(f"Sending fast tx via {best_node}...")
-            
-            # Use direct RPC call for speed
-            async with aiohttp.ClientSession() as session:
-                payload = {"jsonrpc": "2.0", "method": "eth_sendRawTransaction", "params": [raw_tx_hex], "id": 1}
-                async with session.post(best_node, json=payload, timeout=5) as response:
-                    resp_data = await response.json()
-                    
-            if "result" in resp_data:
-                tx_hash = resp_data["result"]
-                logger.success(f"Fast buy sent in {time.time()-t0:.3f}s! Hash: {tx_hash}")
-                
-                # Async Log trade (fire and forget or wait?)
-                # We return immediately, log later
+            # 优先使用预签名，否则现场签名
+            raw_tx_hex = pre_built_data.get("pre_signed_raw")
+            if not raw_tx_hex:
+                t_sign = time.time()
+                signed_tx = self.w3.eth.account.sign_transaction(tx_params, private_key=self.account.key)
+                raw = getattr(signed_tx, 'rawTransaction', None) or getattr(signed_tx, 'raw_transaction', None)
+                if raw is None and isinstance(signed_tx, dict):
+                    raw = signed_tx.get('rawTransaction')
+                if raw is None:
+                    raise ValueError(f"无法提取 rawTransaction，类型: {type(signed_tx)}")
+                raw_tx_hex = raw.hex()
+                logger.info(f"⏱️ 现场签名: {(time.time()-t_sign)*1000:.0f}ms")
+            else:
+                logger.info("⏱️ 使用预签名，跳过签名步骤")
+
+            # 竞速广播：同时发给 top-N 节点，取最快成功响应
+            top_nodes = self.node_manager.get_top_nodes(n=3)
+            logger.info(f"竞速广播到 {len(top_nodes)} 个节点: {[n.split('/')[2] for n in top_nodes]}")
+
+            session = self._http_session
+            if session is None or session.closed:
+                session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=5))
+
+            payload = {"jsonrpc": "2.0", "method": "eth_sendRawTransaction", "params": [raw_tx_hex], "id": 1}
+
+            async def _send_to(url):
+                async with session.post(url, json=payload) as resp:
+                    return await resp.json()
+
+            t_send = time.time()
+            tasks = [asyncio.create_task(_send_to(url)) for url in top_nodes]
+            tx_hash = None
+            pending = set(tasks)
+            while pending:
+                done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
+                for task in done:
+                    try:
+                        resp_data = task.result()
+                        if "result" in resp_data and resp_data["result"]:
+                            tx_hash = resp_data["result"]
+                            # 取消剩余任务（已有一个成功）
+                            for t in pending:
+                                t.cancel()
+                            pending.clear()
+                            break
+                    except Exception:
+                        pass
+                if tx_hash:
+                    break
+
+            logger.info(f"⏱️ 广播耗时: {(time.time()-t_send)*1000:.0f}ms")
+
+            if tx_hash:
+                logger.success(f"⏱️ fast_buy 总计: {(time.time()-t0)*1000:.0f}ms  hash={tx_hash}")
                 asyncio.create_task(self._log_trade(
-                    "PRE_BUILT", "PRE_BUILT", "buy", 
-                    str(pre_built_data["amount_out"]), str(self.w3.from_wei(tx_params['value'], 'ether')), 
+                    "PRE_BUILT", "PRE_BUILT", "buy",
+                    str(pre_built_data["amount_out"]), str(self.w3.from_wei(tx_params['value'], 'ether')),
                     tx_hash, "success"
                 ))
-                
                 return {
-                    "status": "success", 
-                    "tx_hash": tx_hash, 
+                    "status": "success",
+                    "tx_hash": tx_hash,
                     "amount": float(pre_built_data["amount_out"]),
                     "amount_bnb_in": float(self.w3.from_wei(tx_params['value'], 'ether')),
                     "buy_gas_price": tx_params.get('gasPrice', 0)
                 }
             else:
-                logger.error(f"Fast buy failed: {resp_data}")
-                return {"status": "failed", "reason": str(resp_data)}
+                logger.error(f"Fast buy failed: 所有节点均未返回 tx hash")
+                return {"status": "failed", "reason": "所有节点广播失败"}
                 
         except Exception as e:
             logger.error(f"Fast buy exception: {e}")
@@ -572,6 +612,17 @@ class BSCExecutor:
         """
         token_address = self.w3_to_checksum(token_address)
         
+        # 买入前最后一道防线
+        # 快速验证当前流动性是否真实存在
+        try:
+            liquidity = await self.get_pair_liquidity(token_address)
+            if liquidity < 10:
+                logger.warning(f"买入前验证失败：流动性{liquidity:.2f}BNB不足")
+                return {"status": "failed", "reason": "insufficient_liquidity"}
+        except Exception as e:
+            logger.error(f"买入前流动性验证异常，取消买入: {e}")
+            return {"status": "failed", "reason": f"liquidity_check_error: {e}"}
+
         # 0. 防重复买入检查
         if token_address.lower() in self.bought_tokens:
             logger.warning(f"代币 {token_symbol} 已在买入列表中，跳过")
@@ -1333,7 +1384,7 @@ class BSCExecutor:
             }
             
             async with aiohttp.ClientSession() as session:
-                async with session.post(url, json=payload, timeout=10) as response:
+                async with session.post(url, json=payload, timeout=5) as response:
                     if response.status != 200:
                         logger.error(f"Telegram 发送失败: {await response.text()}")
                         
@@ -1411,8 +1462,8 @@ class BSCExecutor:
 
     async def close(self):
         """关闭连接"""
-        # AsyncWeb3 不需要显式关闭，但如果有 Session 可以关闭
-        pass
+        if self._http_session and not self._http_session.closed:
+            await self._http_session.close()
 
 # 简单测试入口
 if __name__ == "__main__":

@@ -15,16 +15,51 @@ from eth_utils import keccak, to_checksum_address
 
 from .local_simulator import LocalSimulator
 from .blacklist_manager import BlacklistManager
+from bsc_bot.utils.multicall_helper import multicall3_batch
 
 # 加载环境变量
 load_dotenv()
+
+
+class SmartCache:
+    """轻量级 TTL 缓存，线程/协程安全（单进程异步场景）。"""
+
+    def __init__(self):
+        self._store: dict = {}
+
+    def get(self, key: str, max_age_seconds: float = 60):
+        entry = self._store.get(key)
+        if entry is not None:
+            value, ts = entry
+            if time.time() - ts < max_age_seconds:
+                return value
+        return None
+
+    def set(self, key: str, value) -> None:
+        self._store[key] = (value, time.time())
+
+    def invalidate(self, key: str) -> None:
+        self._store.pop(key, None)
+
+
+# 模块级单例，跨同一进程所有 SecurityChecker 实例共享
+_cache = SmartCache()
 
 # 常量定义
 CHAIN_ID = 56
 GOPLUS_API_URL = "https://api.gopluslabs.io/api/v1/token_security/56"
 HONEYPOT_IS_API_URL = "https://api.honeypot.is/v2/IsHoneypot"
-BSCSCAN_API_URL = "https://api.bscscan.com/api"
+# 升级到 BSCScan V2 API (使用 Etherscan V2 统一端点)
+BSCSCAN_API_URL = "https://api.etherscan.io/v2/api?chainid=56" 
 BSCSCAN_API_KEY = os.getenv("BSCSCAN_API_KEY", "")
+
+# 必须成功的检测项 (Fail-Safe)
+# holders 不在此列：新币上线初期无真实钱包持仓是正常现象，改为评分降权而非硬拒绝
+REQUIRED_CHECKS = [
+    "goplus",
+    "honeypot",
+    "contract", # 源码获取
+]
 
 # Tornado Cash 混币器地址
 TORNADO_CASH_ADDRESS = "0x84443CFd09A48AF6eF360C6976C5392aC5023a1F".lower()
@@ -62,7 +97,7 @@ class SecurityChecker:
     async def _get_session(self):
         if self.session is None or self.session.closed:
             self.session = aiohttp.ClientSession(
-                timeout=aiohttp.ClientTimeout(total=10),
+                timeout=aiohttp.ClientTimeout(total=8),   # 各子调用自带 5s，8s 作兜底
                 trust_env=True  # 使用系统代理（HTTP_PROXY）访问外部 API
             )
         return self.session
@@ -103,13 +138,30 @@ class SecurityChecker:
 
     async def check_goplus(self, token_address: str) -> Dict[str, Any]:
         """GoPlus Security API 检测"""
+        cache_key = f"goplus:{token_address.lower()}"
+        cached = _cache.get(cache_key, max_age_seconds=300)  # 5 min
+        if cached is not None:
+            logger.debug(f"[cache] goplus hit: {token_address[:10]}…")
+            return cached
+
         try:
             session = await self._get_session()
             params = {"contract_addresses": token_address}
-            async with session.get(GOPLUS_API_URL, params=params) as resp:
+            # Short timeout for GoPlus
+            async with session.get(GOPLUS_API_URL, params=params, timeout=5) as resp:
                 if resp.status == 200:
                     data = await resp.json()
+                    # Ensure we extract data for THIS token address only
                     result = data.get("result", {}).get(token_address.lower(), {})
+
+                    # Log raw data for verification
+                    logger.info(f"GoPlus Raw Data for {token_address}: {json.dumps(result)}")
+
+                    if not result:
+                         # Try original case if lower failed (API quirk?)
+                         result = data.get("result", {}).get(token_address, {})
+                    if result:
+                        _cache.set(cache_key, result)
                     return result
         except Exception as e:
             logger.warning(f"GoPlus API 检测失败: {e}")
@@ -117,18 +169,34 @@ class SecurityChecker:
 
     async def check_honeypot_is(self, token_address: str) -> Dict[str, Any]:
         """Honeypot.is API 检测"""
+        cache_key = f"honeypot:{token_address.lower()}"
+        cached = _cache.get(cache_key, max_age_seconds=300)  # 5 min
+        if cached is not None:
+            logger.debug(f"[cache] honeypot hit: {token_address[:10]}…")
+            return cached
+
         try:
             session = await self._get_session()
             params = {"address": token_address, "chainID": CHAIN_ID}
-            async with session.get(HONEYPOT_IS_API_URL, params=params) as resp:
+            # Short timeout
+            async with session.get(HONEYPOT_IS_API_URL, params=params, timeout=5) as resp:
                 if resp.status == 200:
-                    return await resp.json()
+                    result = await resp.json()
+                    if result:
+                        _cache.set(cache_key, result)
+                    return result
         except Exception as e:
             logger.warning(f"Honeypot.is API 检测失败: {e}")
         return {}
 
     async def check_contract_code(self, token_address: str) -> Dict[str, Any]:
         """合约代码分析 (通过 BscScan 获取 ABI/Source)"""
+        cache_key = f"contract:{token_address.lower()}"
+        cached = _cache.get(cache_key, max_age_seconds=1800)  # 30 min — 源码不可变
+        if cached is not None:
+            logger.debug(f"[cache] contract hit: {token_address[:10]}…")
+            return cached
+
         try:
             session = await self._get_session()
             params = {
@@ -137,11 +205,14 @@ class SecurityChecker:
                 "address": token_address,
                 "apikey": BSCSCAN_API_KEY
             }
-            async with session.get(BSCSCAN_API_URL, params=params) as resp:
+            # BscScan might be slow, but 5s is usually enough for API
+            async with session.get(BSCSCAN_API_URL, params=params, timeout=5) as resp:
                 if resp.status == 200:
                     data = await resp.json()
                     if data["status"] == "1" and data["result"]:
-                        return data["result"][0]
+                        result = data["result"][0]
+                        _cache.set(cache_key, result)
+                        return result
         except Exception as e:
             logger.warning(f"合约代码获取失败: {e}")
         return {}
@@ -150,8 +221,6 @@ class SecurityChecker:
         """代币持仓分析 (使用 BscScan API)"""
         try:
             session = await self._get_session()
-            # 尝试使用 BscScan API 获取持仓列表
-            # 注意：这是 Pro 接口，普通 key 可能无法访问，或者访问受限
             params = {
                 "module": "token",
                 "action": "tokenholderlist",
@@ -161,7 +230,8 @@ class SecurityChecker:
                 "apikey": BSCSCAN_API_KEY
             }
             
-            async with session.get(BSCSCAN_API_URL, params=params) as resp:
+            # Short timeout for holders check
+            async with session.get(BSCSCAN_API_URL, params=params, timeout=5) as resp:
                 if resp.status == 200:
                     data = await resp.json()
                     if data["status"] == "1" and data["result"]:
@@ -179,9 +249,14 @@ class SecurityChecker:
                                     {"constant":True,"inputs":[],"name":"totalSupply","outputs":[{"name":"","type":"uint256"}],"payable":False,"stateMutability":"view","type":"function"},
                                     {"constant":True,"inputs":[],"name":"decimals","outputs":[{"name":"","type":"uint8"}],"payable":False,"stateMutability":"view","type":"function"}
                                 ])
-                                real_total_supply = await contract.functions.totalSupply().call()
-                                decimals = await contract.functions.decimals().call()
-                                real_total_supply = real_total_supply / (10 ** decimals)
+                                # multicall: totalSupply + decimals → 1 RPC
+                                mc_res = await multicall3_batch(self.w3, [
+                                    (token_address, "totalSupply()", [], [], ["uint256"]),
+                                    (token_address, "decimals()",    [], [], ["uint8"]),
+                                ])
+                                raw_supply, decimals = mc_res[0], mc_res[1]
+                                if raw_supply is not None and decimals is not None:
+                                    real_total_supply = raw_supply / (10 ** decimals)
                             except:
                                 pass
                         
@@ -232,12 +307,20 @@ class SecurityChecker:
                         
         except Exception as e:
             logger.warning(f"持仓分析失败: {e}")
+            import traceback
+            logger.warning(f"Traceback: {traceback.format_exc()}")
         return {}
 
     async def analyze_deployer_history(self, deployer_address: str) -> Dict[str, Any]:
         """Deployer 资金来源与历史分析"""
         if not deployer_address:
             return {}
+
+        cache_key = f"deployer:{deployer_address.lower()}"
+        cached = _cache.get(cache_key, max_age_seconds=600)  # 10 min — 历史交易稳定
+        if cached is not None:
+            logger.debug(f"[cache] deployer hit: {deployer_address[:10]}…")
+            return cached
             
         try:
             session = await self._get_session()
@@ -254,7 +337,7 @@ class SecurityChecker:
                 "apikey": BSCSCAN_API_KEY
             }
             
-            async with session.get(BSCSCAN_API_URL, params=params) as resp:
+            async with session.get(BSCSCAN_API_URL, params=params, timeout=5) as resp:
                 if resp.status == 200:
                     data = await resp.json()
                     if data["status"] == "1" and data["result"]:
@@ -289,13 +372,15 @@ class SecurityChecker:
                              if balance_in > 0.1 * 10**18: # > 0.1 BNB
                                  is_drained = True
 
-                        return {
+                        result = {
                             "is_tornado": is_tornado,
                             "wallet_age_days": wallet_age_days,
                             "is_drained": is_drained,
                             "first_tx_from": from_addr
                         }
-                        
+                        _cache.set(cache_key, result)
+                        return result
+
         except Exception as e:
             logger.warning(f"Deployer 分析失败: {e}")
         return {}
@@ -326,6 +411,12 @@ class SecurityChecker:
         """链上行为模式分析：买入资金来源与关联性"""
         if not pair_address or not token_address:
             return {}
+
+        cache_key = f"buyers:{pair_address.lower()}:{token_address.lower()}"
+        cached = _cache.get(cache_key, max_age_seconds=180)  # 3 min — 新买入会陆续进来
+        if cached is not None:
+            logger.debug(f"[cache] buyers hit: {token_address[:10]}…")
+            return cached
             
         try:
             session = await self._get_session()
@@ -346,7 +437,7 @@ class SecurityChecker:
             buyers = []
             buy_txs = []
             
-            async with session.get(BSCSCAN_API_URL, params=params) as resp:
+            async with session.get(BSCSCAN_API_URL, params=params, timeout=5) as resp:
                 if resp.status == 200:
                     data = await resp.json()
                     if data["status"] == "1" and data["result"]:
@@ -402,7 +493,7 @@ class SecurityChecker:
                             "sort": "asc",
                             "apikey": BSCSCAN_API_KEY
                         }
-                        async with session.get(BSCSCAN_API_URL, params=p) as r:
+                        async with session.get(BSCSCAN_API_URL, params=p, timeout=3) as r:
                             if r.status == 200:
                                 d = await r.json()
                                 if d["status"] == "1" and d["result"]:
@@ -430,15 +521,17 @@ class SecurityChecker:
                     same_source_count += count
             
             has_same_source = same_source_count >= 2
-            
-            return {
+
+            result = {
                 "coordinated_buys": coordinated_buys,
                 "has_same_source": has_same_source,
                 "same_source_count": same_source_count,
                 "new_wallets_count": new_wallets_count,
                 "total_buyers_checked": len(buyers)
             }
-            
+            _cache.set(cache_key, result)
+            return result
+
         except Exception as e:
             logger.warning(f"行为模式分析失败: {e}")
             return {}
@@ -447,6 +540,12 @@ class SecurityChecker:
         """检查 Deployer 是否保留代币"""
         if not self.w3 or not deployer_address:
             return {}
+
+        cache_key = f"retention:{token_address.lower()}:{deployer_address.lower()}"
+        cached = _cache.get(cache_key, max_age_seconds=120)  # 2 min — deployer 可能卖出
+        if cached is not None:
+            logger.debug(f"[cache] retention hit: {token_address[:10]}…")
+            return cached
             
         try:
             checksum_token = AsyncWeb3.to_checksum_address(token_address)
@@ -457,19 +556,25 @@ class SecurityChecker:
                 {"constant":True,"inputs":[],"name":"totalSupply","outputs":[{"name":"","type":"uint256"}],"payable":False,"stateMutability":"view","type":"function"}
             ])
             
-            balance = await contract.functions.balanceOf(checksum_deployer).call()
-            total_supply = await contract.functions.totalSupply().call()
+            # multicall: balanceOf + totalSupply → 1 RPC
+            mc_res = await multicall3_batch(self.w3, [
+                (checksum_token, "balanceOf(address)", [checksum_deployer], ["address"], ["uint256"]),
+                (checksum_token, "totalSupply()",      [],                  [],          ["uint256"]),
+            ])
+            balance, total_supply = mc_res[0] or 0, mc_res[1] or 0
             
             ratio = 0
             if total_supply > 0:
                 ratio = balance / total_supply
                 
-            return {
+            result = {
                 "deployer_balance": balance,
                 "ratio": ratio,
-                "is_high_retention": ratio > 0.01 # > 1%
+                "is_high_retention": ratio > 0.01  # > 1%
             }
-            
+            _cache.set(cache_key, result)
+            return result
+
         except Exception as e:
             logger.warning(f"Deployer 持仓检查失败: {e}")
             return {}
@@ -478,20 +583,29 @@ class SecurityChecker:
         """检查合约字节码相似度 (基于函数选择器指纹)"""
         if not self.w3:
             return None
-            
+
+        cache_key = f"bytecode:{token_address.lower()}"
+        cached = _cache.get(cache_key, max_age_seconds=3600)  # 60 min — 字节码不可变
+        if cached is not None:
+            logger.debug(f"[cache] bytecode hit: {token_address[:10]}…")
+            return cached if cached != "__none__" else None
+
         try:
             checksum_address = to_checksum_address(token_address)
             code = await self.w3.eth.get_code(checksum_address)
-            
-            if len(code) < 50: # 合约代码太短，可能是代理或空
+
+            if len(code) < 50:  # 合约代码太短，可能是代理或空
+                _cache.set(cache_key, "__none__")
                 return None
-                
+
             # 传递完整字节码 (转hex) 给 BlacklistManager 提取指纹
             bytecode_hex = code.hex()
-            
+
             # 检查相似度 (指纹匹配)
-            return await self.blacklist_manager.check_code_similarity(bytecode_hex)
-            
+            result = await self.blacklist_manager.check_code_similarity(bytecode_hex)
+            _cache.set(cache_key, result if result is not None else "__none__")
+            return result
+
         except Exception as e:
             logger.warning(f"字节码相似度检查失败: {e}")
         return None
@@ -524,9 +638,13 @@ class SecurityChecker:
                 {"constant":True,"inputs":[],"name":"token0","outputs":[{"name":"","type":"address"}],"payable":False,"stateMutability":"view","type":"function"}
             ])
             
-            reserves = await pair_contract.functions.getReserves().call()
-            token0 = await pair_contract.functions.token0().call()
-            
+            # multicall: getReserves + token0 → 1 RPC
+            mc_res = await multicall3_batch(self.w3, [
+                (pair_address, "getReserves()", [], [], ["uint112", "uint112", "uint32"]),
+                (pair_address, "token0()",      [], [], ["address"]),
+            ])
+            reserves, token0 = mc_res[0], mc_res[1]
+
             # WBNB Address
             WBNB = "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c"
             
@@ -554,8 +672,16 @@ class SecurityChecker:
         """5分钟观察期分析"""
         if not initial_state:
             return {}
-            
-        current_state = await self.get_token_state(token_address, pair_address)
+
+        # web3.py 默认 30s 超时，必须显式限制避免拖慢整体安全分析
+        try:
+            current_state = await asyncio.wait_for(
+                self.get_token_state(token_address, pair_address),
+                timeout=3.0
+            )
+        except asyncio.TimeoutError:
+            logger.warning("[observation] get_token_state 超时(>3s)，跳过")
+            return {}
         if not current_state:
             return {}
             
@@ -586,7 +712,7 @@ class SecurityChecker:
                 "apikey": BSCSCAN_API_KEY
             }
             
-            async with session.get(BSCSCAN_API_URL, params=params) as resp:
+            async with session.get(BSCSCAN_API_URL, params=params, timeout=5) as resp:
                 if resp.status == 200:
                     data = await resp.json()
                     if data["status"] == "1" and data["result"]:
@@ -622,97 +748,211 @@ class SecurityChecker:
             "big_dump": big_dump
         }
 
+    async def _task_local_checks(self, token_address: str, deployer_address: str, pair_address: str) -> Dict[str, Any]:
+        """本地检测（黑名单+代码Hash+模拟交易）打包为单一任务，与外部API并行执行"""
+        t0 = time.perf_counter()
+        out = {"reject": False, "reason": None, "code_hash": None, "simulation": {}, "sim_bonus": False}
+        try:
+            # 1. DB 黑名单：deployer
+            t1 = time.perf_counter()
+            if deployer_address:
+                reason = await self.blacklist_manager.check_deployer(deployer_address)
+                dur1 = (time.perf_counter() - t1) * 1000
+                if reason:
+                    out["reject"] = True
+                    out["reason"] = f"Deployer 在本地黑名单中: {reason}"
+                    logger.info(f"⏱️ [local_checks] step1_deployer_db={dur1:.0f}ms → 命中黑名单，总={( time.perf_counter()-t0)*1000:.0f}ms")
+                    return out
+            else:
+                dur1 = (time.perf_counter() - t1) * 1000
+            # 2. 内存黑名单
+            t2 = time.perf_counter()
+            if deployer_address and deployer_address in self.blacklist:
+                out["reject"] = True
+                out["reason"] = "Deployer 在本地内存黑名单中"
+                dur2 = (time.perf_counter() - t2) * 1000
+                logger.info(f"⏱️ [local_checks] step1={dur1:.0f}ms step2_mem={dur2:.0f}ms → 内存黑名单，总={(time.perf_counter()-t0)*1000:.0f}ms")
+                return out
+            dur2 = (time.perf_counter() - t2) * 1000
+            # 3. 代码 Hash + 本地模拟（需要先 get_code）
+            t3 = time.perf_counter()
+            code_hash = None
+            if self.w3:
+                try:
+                    code = await self.w3.eth.get_code(to_checksum_address(token_address))
+                    if len(code) > 2:
+                        code_hash = '0x' + keccak(code).hex()
+                        out["code_hash"] = code_hash
+                        hash_reason = await self.blacklist_manager.check_code_hash(code_hash)
+                        if hash_reason:
+                            out["reject"] = True
+                            out["reason"] = f"合约代码Hash在黑名单中: {hash_reason}"
+                            dur3 = (time.perf_counter() - t3) * 1000
+                            logger.info(f"⏱️ [local_checks] step1={dur1:.0f}ms step2={dur2:.0f}ms step3_code={dur3:.0f}ms → hash黑名单，总={(time.perf_counter()-t0)*1000:.0f}ms")
+                            return out
+                except Exception as e:
+                    logger.warning(f"代码Hash获取失败: {e}")
+            dur3 = (time.perf_counter() - t3) * 1000
+            # 4. 本地模拟
+            t4 = time.perf_counter()
+            if self.local_simulator and pair_address:
+                is_hp, b_tax, s_tax, sim_reason = await self.local_simulator.simulate_trade(token_address, pair_address)
+                dur4 = (time.perf_counter() - t4) * 1000
+                out["simulation"] = {"is_honeypot": is_hp, "buy_tax": b_tax, "sell_tax": s_tax, "reason": sim_reason}
+                if is_hp:
+                    out["reject"] = True
+                    out["reason"] = f"本地模拟交易失败: {sim_reason}"
+                    if code_hash:
+                        await self.blacklist_manager.add_code_hash(code_hash, f"Simulation Failed: {sim_reason}")
+                    if deployer_address:
+                        await self.blacklist_manager.add_deployer(deployer_address, f"Deployed Honeypot {token_address}")
+                else:
+                    out["sim_bonus"] = True
+            else:
+                dur4 = (time.perf_counter() - t4) * 1000
+        except Exception as e:
+            logger.warning(f"本地检测任务异常: {e}")
+            dur1 = dur2 = dur3 = dur4 = -1
+        logger.info(f"⏱️ [local_checks] step1_deployer_db={dur1:.0f}ms step2_mem={dur2:.0f}ms step3_get_code={dur3:.0f}ms step4_simulate={dur4:.0f}ms 总={(time.perf_counter()-t0)*1000:.0f}ms")
+        return out
+
     async def analyze(self, token_address: str, deployer_address: str, pair_address: str = None, initial_state: Dict[str, Any] = None) -> Dict[str, Any]:
-        """执行完整安全分析"""
+        """执行完整安全分析（全并行版：本地检测与外部API同时发起）"""
         start_time = time.time()
+        t_perf = time.perf_counter()
         token_address = token_address.lower()
         deployer_address = deployer_address.lower() if deployer_address else ""
-        
-        # Ensure DB is ready (idempotent)
+
+        # Ensure DB is ready (idempotent, very fast)
         await self.blacklist_manager.init_db()
-        
+
         result = {
             "token_address": token_address,
-            "final_score": 100, # Initial score, will be capped/adjusted
+            "final_score": 100,
             "decision": "reject",
             "risk_items": [],
             "bonus_items": [],
             "raw_data": {},
             "analysis_time": 0
         }
-
         score = 100
         risk_items = []
         bonus_items = []
 
-        # --- 维度零：本地黑名单与模拟 (最高优先级) ---
-        
-        # 1. 检查黑名单
-        if deployer_address:
-            reason = await self.blacklist_manager.check_deployer(deployer_address)
-            if reason:
-                score = 0
-                risk_items.append({"desc": f"Deployer 在本地黑名单中: {reason}", "score": -100})
-                return self._finalize_result(result, score, risk_items, bonus_items, start_time)
-
-        code_hash = None
-        if self.w3:
+        # ── 全并行：本地检测 + 所有外部API同时发起 ──
+        async def _timed(coro, name):
+            t = time.perf_counter()
             try:
-                # Ensure token_address is checksummed
-                checksum_address = to_checksum_address(token_address)
-                code = await self.w3.eth.get_code(checksum_address)
-                if len(code) > 2: # Not empty
-                    code_hash = '0x' + keccak(code).hex()
-                    reason = await self.blacklist_manager.check_code_hash(code_hash)
-                    if reason:
-                        score = 0
-                        risk_items.append({"desc": f"合约代码Hash在黑名单中: {reason}", "score": -100})
-                        return self._finalize_result(result, score, risk_items, bonus_items, start_time)
+                r = await coro
+                logger.info(f"⏱️ [{name}]: {(time.perf_counter()-t)*1000:.0f}ms")
+                return r
             except Exception as e:
-                logger.warning(f"获取代码Hash失败: {e}")
+                logger.info(f"⏱️ [{name}]: {(time.perf_counter()-t)*1000:.0f}ms (failed: {type(e).__name__})")
+                raise
 
-        # 2. 本地模拟交易
-        if self.local_simulator and pair_address:
-            logger.info(f"开始本地模拟交易: {token_address}")
-            is_hp, b_tax, s_tax, reason = await self.local_simulator.simulate_trade(token_address, pair_address)
-            
-            result["raw_data"]["simulation"] = {
-                "is_honeypot": is_hp,
-                "buy_tax": b_tax,
-                "sell_tax": s_tax,
-                "reason": reason
-            }
-            
-            if is_hp:
-                score = 0
-                risk_items.append({"desc": f"本地模拟交易失败: {reason}", "score": -100})
-                
-                # 自动加入黑名单
-                if code_hash:
-                    await self.blacklist_manager.add_code_hash(code_hash, f"Simulation Failed: {reason}")
-                if deployer_address:
-                    await self.blacklist_manager.add_deployer(deployer_address, f"Deployed Honeypot {token_address}")
-                    
-                return self._finalize_result(result, score, risk_items, bonus_items, start_time)
-            else:
-                bonus_items.append({"desc": "本地模拟交易成功 (eth_call)", "score": +20})
-                # TODO: 使用模拟的税率进行评分 (目前 simulate_trade 返回 0 税率，需完善)
-
-        # 并行执行 API 调用 (新增 holders, deployer, social check, behavior check)
-        goplus_task = self.check_goplus(token_address)
-        honeypot_task = self.check_honeypot_is(token_address)
-        contract_task = self.check_contract_code(token_address)
-        holders_task = self.analyze_token_holders(token_address, deployer_address, pair_address)
-        deployer_task = self.analyze_deployer_history(deployer_address)
-        similarity_task = self.check_bytecode_similarity(token_address)
-        fund_source_task = self.analyze_buyer_fund_source(pair_address, token_address)
-        retention_task = self.check_deployer_token_retention(token_address, deployer_address)
-        observation_task = self.analyze_observation(token_address, pair_address, initial_state)
-        
-        goplus_data, honeypot_data, contract_data, holders_data, deployer_data, similarity_reason, fund_source_data, retention_data, observation_data = await asyncio.gather(
-            goplus_task, honeypot_task, contract_task, holders_task, deployer_task, similarity_task, fund_source_task, retention_task, observation_task
+        raw_results = await asyncio.gather(
+            _timed(self._task_local_checks(token_address, deployer_address, pair_address), "local_checks"),
+            _timed(self.check_goplus(token_address),                                        "goplus"),
+            _timed(self.check_honeypot_is(token_address),                                   "honeypot"),
+            _timed(self.check_contract_code(token_address),                                 "contract"),
+            _timed(self.analyze_token_holders(token_address, deployer_address, pair_address), "holders"),
+            _timed(self.analyze_deployer_history(deployer_address),                         "deployer"),
+            _timed(self.check_bytecode_similarity(token_address),                           "similarity"),
+            _timed(self.analyze_buyer_fund_source(pair_address, token_address),             "fund_source"),
+            _timed(self.check_deployer_token_retention(token_address, deployer_address),    "retention"),
+            _timed(self.analyze_observation(token_address, pair_address, initial_state),    "observation"),
+            return_exceptions=True
         )
+        logger.info(f"⏱️ 全并行总耗时: {(time.perf_counter()-t_perf)*1000:.0f}ms")
+
+        def _unwrap(val, default):
+            if isinstance(val, Exception):
+                logger.error(f"安全检测子任务异常: {val}")
+                return default
+            return val if val is not None else default
+
+        local_data        = _unwrap(raw_results[0], {})
+        goplus_data       = _unwrap(raw_results[1], {})
+        honeypot_data     = _unwrap(raw_results[2], {})
+        contract_data     = _unwrap(raw_results[3], {})
+        holders_data      = _unwrap(raw_results[4], {})
+        deployer_data     = _unwrap(raw_results[5], {})
+        similarity_reason = _unwrap(raw_results[6], None)
+        fund_source_data  = _unwrap(raw_results[7], {})
+        retention_data    = _unwrap(raw_results[8], {})
+        observation_data  = _unwrap(raw_results[9], {})
+
+        # 优先处理本地拒绝信号（黑名单/模拟失败）
+        if local_data.get("reject"):
+            score = 0
+            risk_items.append({"desc": local_data.get("reason", "本地检测拒绝"), "score": -100})
+            return self._finalize_result(result, score, risk_items, bonus_items, start_time)
+
+        result["raw_data"]["simulation"] = local_data.get("simulation", {})
+        if local_data.get("sim_bonus"):
+            bonus_items.append({"desc": "本地模拟交易成功 (eth_call)", "score": +20})
         
+        # --- Fallback for Holders Check (GoPlus) ---
+        if not holders_data and goplus_data and goplus_data.get("holders"):
+            logger.info(f"Using GoPlus holders data as fallback for {token_address}")
+            logger.info(f"GoPlus Fallback Data: {json.dumps(goplus_data.get('holders'))[:200]}...") # Log first 200 chars
+            try:
+                gp_holders = goplus_data["holders"]
+                top_5 = 0
+                max_single = 0
+                deployer_sh = 0
+                
+                # GoPlus percent is ratio (e.g. 0.05 = 5%)
+                # 过滤零地址、burn地址、LP地址、锁仓合约地址、合约地址（is_contract==1）
+                filtered_holders = []
+                for h in gp_holders:
+                    addr = h.get("address", "").lower()
+                    if addr in ["0x0000000000000000000000000000000000000000", "0x000000000000000000000000000000000000dead"]: continue
+                    if pair_address and addr == pair_address.lower(): continue
+                    if addr in [p.lower() for p in LOCK_PLATFORMS.values()]: continue
+                    if h.get('is_contract') == 1:  # 过滤LP合约等合约地址，只统计真实钱包
+                        continue
+                    filtered_holders.append(h)
+
+                # 过滤后无真实钱包 → 新币上线初期正常现象，用哨兵值替代 None，后续降权评分
+                if not filtered_holders:
+                    logger.info(f"GoPlus holders fallback: 过滤合约后无真实钱包持仓（新币初期）")
+                    holders_data = {"no_real_holders": True, "top_5_share": 0, "max_single_share": 0, "deployer_share": 0, "holders_count": 0}
+                else:
+                    for i, h in enumerate(filtered_holders):
+                        if i >= 20: break
+                        pct = float(h.get("percent", 0)) * 100
+
+                        if i < 5: top_5 += pct
+                        if pct > max_single: max_single = pct
+                        if deployer_address and h.get("address", "").lower() == deployer_address.lower():
+                            deployer_sh = pct
+
+                    holders_data = {
+                        "top_5_share": top_5,
+                        "max_single_share": max_single,
+                        "deployer_share": deployer_sh,
+                        "holders_count": goplus_data.get("holder_count", len(filtered_holders))
+                    }
+            except Exception as e:
+                logger.warning(f"GoPlus holders fallback failed: {e}")
+
+        # --- Fail-Safe Mechanism ---
+        # 必须检测项失败 → 直接拒绝
+        check_results_map = {
+            "goplus": goplus_data,
+            "honeypot": honeypot_data,
+            "contract": contract_data,
+            "holders": holders_data
+        }
+        
+        for check_name in REQUIRED_CHECKS:
+            if not check_results_map.get(check_name):
+                logger.error(f"Critical Security Check Failed: {check_name} (API Error or Empty Result)")
+                score = 0
+                risk_items.append({"desc": f"必须检测项失败: {check_name}", "score": -100})
+                return self._finalize_result(result, score, risk_items, bonus_items, start_time)
+
         result["raw_data"]["goplus"] = goplus_data
         result["raw_data"]["honeypot"] = honeypot_data
         result["raw_data"]["contract"] = contract_data
@@ -809,23 +1049,25 @@ class SecurityChecker:
 
         # --- 维度三：链上行为与持仓分析 ---
         
-        # 5. 持仓集中度分析 (新增)
+        # 5. 持仓集中度分析
         if holders_data:
-            top_5 = holders_data.get("top_5_share", 0)
-            max_single = holders_data.get("max_single_share", 0)
-            deployer_hold = holders_data.get("deployer_share", 0)
-            
-            if top_5 > 30:
-                score -= 40
-                risk_items.append({"desc": f"持仓高度集中 (Top 5: {top_5:.1f}%)", "score": -40})
-            
-            if max_single > 15:
-                score -= 30
-                risk_items.append({"desc": f"存在巨鲸持仓 (Single: {max_single:.1f}%)", "score": -30})
-                
-            if deployer_hold > 0: # 只要有持仓就扣分 (User: deployer或关联地址仍持有代币 → 扣35分)
-                # 这里 deployer_share 是百分比，如果是0.0001%这种忽略不计? User没说阈值，假设 > 0.1%?
-                # User says "仍持有代币", usually implies significant amount. 
+            if holders_data.get("no_real_holders"):
+                # 新币初期：所有持仓均在合约（LP等），暂无真实钱包，降权而非拒绝
+                score -= 15
+                risk_items.append({"desc": "暂无真实钱包持仓（新币上线初期）", "score": -15})
+            else:
+                top_5 = holders_data.get("top_5_share", 0)
+                max_single = holders_data.get("max_single_share", 0)
+                deployer_hold = holders_data.get("deployer_share", 0)
+
+                if top_5 > 30:
+                    score -= 40
+                    risk_items.append({"desc": f"持仓高度集中 (Top 5: {top_5:.1f}%)", "score": -40})
+
+                if max_single > 15:
+                    score -= 30
+                    risk_items.append({"desc": f"存在巨鲸持仓 (Single: {max_single:.1f}%)", "score": -30})
+
                 if deployer_hold > 0.1:
                     score -= 35
                     risk_items.append({"desc": f"Deployer 仍持有代币 ({deployer_hold:.1f}%)", "score": -35})

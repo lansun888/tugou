@@ -9,6 +9,14 @@ class NodeManager:
     BLACKLIST_THRESHOLD = 5
     # 黑名单节点每隔此轮次重试一次（30s/轮，即 5 分钟）
     BLACKLIST_RETRY_ROUNDS = 10
+    
+    # 默认稳定节点 (优先使用第三方聚合RPC，避免币安官方节点在代理下超时)
+    DEFAULT_NODES = [
+        "https://1rpc.io/bnb",
+        "https://bsc-rpc.publicnode.com",
+        "https://bsc.drpc.org",
+        "https://bscrpc.com"
+    ]
 
     def __init__(self, config):
         self.config = config
@@ -28,6 +36,17 @@ class NodeManager:
         # Fallback to private_rpcs if execute nodes not found
         if not self.execute_nodes:
             self.execute_nodes = self.config.get("network", {}).get("private_rpcs", [])
+            
+        # Merge with default stable nodes if empty or just append to ensure coverage
+        if not self.execute_nodes:
+             self.execute_nodes = self.DEFAULT_NODES
+        else:
+             # Ensure default nodes are included for redundancy
+             if isinstance(self.execute_nodes, str):
+                 self.execute_nodes = [self.execute_nodes]
+             for node in self.DEFAULT_NODES:
+                 if node not in self.execute_nodes:
+                     self.execute_nodes.append(node)
 
         # Ensure we have a list
         if isinstance(self.execute_nodes, str):
@@ -143,3 +162,12 @@ class NodeManager:
             return self.best_node
         # Fallback to first in list if check hasn't run yet
         return self.execute_nodes[0] if self.execute_nodes else None
+
+    def get_top_nodes(self, n: int = 3) -> list:
+        """按延迟返回前 N 个可用节点（用于竞速广播）"""
+        available = [u for u in self.execute_nodes if u not in self._blacklist]
+        if not available:
+            available = self.execute_nodes[:1]
+        # 有延迟数据的节点按延迟升序排列，无数据的排后面
+        scored = sorted(available, key=lambda u: self.latencies.get(u, float('inf')))
+        return scored[:n]

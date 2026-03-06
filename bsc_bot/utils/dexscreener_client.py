@@ -36,7 +36,7 @@ async def get_token_data(token_address: str) -> dict:
     """
     url = f"{DEXSCREENER_API}/token-pairs/v1/bsc/{token_address}"
     try:
-        pairs = await fetch_with_proxy(url, timeout=5)
+        pairs = await fetch_with_proxy(url, timeout=3)
         if not pairs:
             return None
         

@@ -43,6 +43,18 @@ class Position:
     txns_5m_sells: int = 0
     source: str = "init"
     
+    # Flags
+    first_check_done: bool = False # Flag for 2-min quick assessment
+    passed_honeypot_check: bool = False  # 延迟貔貅检测标记（2分钟时触发一次）
+    tp_100_done: bool = False
+    tp_200_done: bool = False
+    tp_400_done: bool = False
+    tp_900_done: bool = False
+    trailing_stop_pct: float = 0.0  # 动态追踪止损线
+    highest_pnl: float = 0.0        # 历史最高盈利百分比
+    liquidity_bnb: float = 0.0          # 最近一次流动性（BNB）
+    initial_liquidity_bnb: float = 0.0  # 买入时初始流动性（用于2分钟评估）
+    
     def update_price(self, new_price: float):
         self.current_price = new_price
         self.last_update_time = time.time()
@@ -61,6 +73,9 @@ class Position:
             
         if new_price > self.highest_price:
             self.highest_price = new_price
+
+        if self.pnl_percentage > self.highest_pnl:
+            self.highest_pnl = self.pnl_percentage
 
 class PositionManager:
     def __init__(self, executor, db_path="bsc_bot.db", mode=None):
@@ -128,7 +143,8 @@ class PositionManager:
                     market_cap REAL DEFAULT 0.0,
                     txns_5m_buys INTEGER DEFAULT 0,
                     txns_5m_sells INTEGER DEFAULT 0,
-                    source TEXT DEFAULT 'init'
+                    source TEXT DEFAULT 'init',
+                    initial_liquidity_bnb REAL DEFAULT 0.0
                 )
             """)
             
@@ -151,6 +167,8 @@ class PositionManager:
                     await db.execute(f"ALTER TABLE {self.positions_table} ADD COLUMN source TEXT DEFAULT 'init'")
                 if "pair_address" not in columns:
                     await db.execute(f"ALTER TABLE {self.positions_table} ADD COLUMN pair_address TEXT DEFAULT ''")
+                if "initial_liquidity_bnb" not in columns:
+                    await db.execute(f"ALTER TABLE {self.positions_table} ADD COLUMN initial_liquidity_bnb REAL DEFAULT 0.0")
             except Exception as e:
                 logger.warning(f"Migration check failed, running legacy migration: {e}")
                 try:
@@ -199,7 +217,8 @@ class PositionManager:
                             buy_gas_price=row_dict.get('buy_gas_price', 0) or 0,
                             pair_address=row_dict.get('pair_address', '') or '',
                             current_price=row_dict.get('current_price', 0.0) or 0.0,
-                            pnl_percentage=row_dict.get('pnl_percentage', 0.0) or 0.0
+                            pnl_percentage=row_dict.get('pnl_percentage', 0.0) or 0.0,
+                            initial_liquidity_bnb=row_dict.get('initial_liquidity_bnb', 0.0) or 0.0
                         )
                         # Recalculate values if needed
                         pos.current_value_bnb = pos.token_amount * pos.current_price
@@ -213,7 +232,7 @@ class PositionManager:
         except Exception as e:
             logger.error(f"恢复仓位失败: {e}")
 
-    async def add_position(self, token_address, token_name, buy_price, buy_amount_bnb, token_amount, buy_gas_price=0, dex_data=None, pair_address=""):
+    async def add_position(self, token_address, token_name, buy_price, buy_amount_bnb, token_amount, buy_gas_price=0, dex_data=None, pair_address="", initial_liquidity_bnb=0.0):
         """添加新仓位"""
         # 每日风控检查
         if not self._check_daily_risk_allow_buy():
@@ -231,7 +250,9 @@ class PositionManager:
             sold_portions=[],
             status="active",
             buy_gas_price=buy_gas_price,
-            pair_address=pair_address
+            pair_address=pair_address,
+            initial_liquidity_bnb=initial_liquidity_bnb,
+            liquidity_bnb=initial_liquidity_bnb
         )
         
         if dex_data:
@@ -260,13 +281,13 @@ class PositionManager:
         try:
             async with aiosqlite.connect(self.db_path) as db:
                 await db.execute(f"""
-                    INSERT OR REPLACE INTO {self.positions_table} 
-                    (token_address, token_name, buy_price_bnb, buy_amount_bnb, token_amount, buy_time, highest_price, sold_portions, status, buy_gas_price, pair_address, current_price, pnl_percentage)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT OR REPLACE INTO {self.positions_table}
+                    (token_address, token_name, buy_price_bnb, buy_amount_bnb, token_amount, buy_time, highest_price, sold_portions, status, buy_gas_price, pair_address, current_price, pnl_percentage, initial_liquidity_bnb)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
-                    pos.token_address, pos.token_name, pos.buy_price_bnb, pos.buy_amount_bnb, 
+                    pos.token_address, pos.token_name, pos.buy_price_bnb, pos.buy_amount_bnb,
                     pos.token_amount, pos.buy_time, pos.highest_price, json.dumps(pos.sold_portions), pos.status, pos.buy_gas_price,
-                    pos.pair_address, pos.current_price, pos.pnl_percentage
+                    pos.pair_address, pos.current_price, pos.pnl_percentage, pos.initial_liquidity_bnb
                 ))
                 await db.commit()
         except Exception as e:
@@ -390,13 +411,17 @@ class PositionManager:
                         except:
                             pass
                             
-                        logger.warning(f"{token_address[:8]} 事件监听已停止，尝试重启...")
                         pos = self.positions.get(token_address)
                         if pos and pos.pair_address and pos.status in ['active', 'partially_sold']:
+                            logger.warning(f"{token_address[:8]} 事件监听已停止，尝试重启...")
                             new_task = asyncio.create_task(
                                 self.watch_swap_events(token_address, pos.pair_address)
                             )
                             self.watch_tasks[token_address] = new_task
+                        else:
+                            # 正常停止 (已卖出或移除)，清理任务
+                            if token_address in self.watch_tasks:
+                                del self.watch_tasks[token_address]
                 
                 # 3. Get active tokens
                 active_tokens = list(self.positions.keys())
@@ -499,67 +524,108 @@ class PositionManager:
         # Guard: skip already-sold positions (parallel tasks may race)
         if pos.status in ("sold", "closed"):
             return
-        # 1. Rug Pull Check
-        is_rug = False
-        if current_price_bnb <= 0:
-            is_rug = True
-        elif liquidity_bnb > 0 and liquidity_bnb < 0.5: # Only if we have liquidity data
-            is_rug = True
-            
-        if is_rug:
-             logger.warning(f"⚠️ {pos.token_name} 疑似归零 (Price={current_price_bnb}, Liq={liquidity_bnb}), 等待5秒二次确认...")
-             await asyncio.sleep(5)
-             # Re-check single token
-             data, err = await self._get_price_onchain(pos.token_address)
-             
-             if err == "network":
-                 logger.warning("二次确认遇到网络错误，跳过止损")
-                 return
 
-             p2 = 0.0
-             l2 = 0.0
-             if data:
-                 p2 = data.get('price_bnb', 0.0)
-                 l2 = data.get('liquidity_bnb', 0.0)
-             
-             if err == "onchain_empty" or p2 <= 0 or (l2 > 0 and l2 < 0.5):
-                 logger.error(f"💀 确认池子归零 (Rug Pull)! 执行清仓逻辑。")
-                 pos.update_price(0.0)
-                 await self._execute_sell(pos, 100, "rug_pull_confirmed")
-                 return
-             else:
-                 logger.info(f"二次确认未归零，恢复正常 (Price={p2})")
-                 current_price_bnb = p2
-                 pos.update_price(p2) # Fix price
+        now = time.time()
+        pos.liquidity_bnb = liquidity_bnb
+        holding_minutes = (now - pos.buy_time) / 60
+        pnl = pos.pnl_percentage
 
-        # 2. Abnormal Pump Check
-        if pos.current_price > 0 and current_price_bnb > pos.current_price * 10:
-             logger.warning(f"⚠️ {pos.token_name} 价格异常暴涨 ({current_price_bnb/pos.current_price:.1f}倍)，疑似数据源错误")
-             return
+        # ===== 阶段一：0-2分钟保护期 =====
+        if holding_minutes < 2:
+            logger.debug(f"{pos.token_name}: 保护期 "
+                        f"{holding_minutes:.1f}分钟 pnl={pnl:.1f}%")
+            if 0 < liquidity_bnb < 0.5:
+                await self._execute_sell(pos, 100, 'rug_pull_confirmed')
+                return
+            if pnl < -70:
+                await self._execute_sell(pos, 100, 'emergency_crash')
+                return
+            return
 
-        # 3. Emergency Stop Loss
-        if pos.highest_price > 0 and current_price_bnb > 0:
-             drop_pct = (pos.highest_price - current_price_bnb) / pos.highest_price
-             if drop_pct > 0.70:
-                 logger.critical(f"⚠️ {pos.token_name} 暴跌 {drop_pct*100:.1f}%! 触发紧急止损!")
-                 await self._execute_sell(pos, 100, "emergency_crash_stop")
-                 return
+        # ===== 阶段二：2分钟时，延迟貔貅检测 =====
+        if not pos.passed_honeypot_check:
+            pos.passed_honeypot_check = True  # 只触发一次
 
-        sold = False
-        if not sold:
-            sold = await self._check_take_profit(pos)
-        if not sold:
-            sold = await self._check_trailing_stop_loss(pos)
-        if not sold:
-            sold = await self._check_time_stop_loss(pos)
-            
-        if sold:
-            if pos.token_amount <= 0 or pos.status in ("sold", "closed"):
-                logger.info(f"仓位 {pos.token_name} 已关闭")
-                self.stop_watching(pos.token_address)
-                if pos.token_address in self.positions:
-                    del self.positions[pos.token_address]
-            await self._save_position(pos)
+            init_liq = pos.initial_liquidity_bnb
+            liq_change_pct = ((liquidity_bnb - init_liq) / init_liq * 100) if init_liq > 0 else 0.0
+
+            logger.info(f"{pos.token_name}: 2分钟评估 "
+                       f"pnl={pnl:.1f}% liq_init={init_liq:.2f} liq_now={liquidity_bnb:.2f} "
+                       f"liq_chg={liq_change_pct:.1f}%")
+
+            # 情况一：流动性撤出 > 30% → 疑似貔貅，离场
+            if liq_change_pct < -30:
+                logger.info(f"{pos.token_name}: 2分钟流动性暴跌 liq_chg={liq_change_pct:.1f}%，离场")
+                await self._execute_sell(pos, 100, 'liq_drain_2min')
+                return
+
+            # 情况二：pnl < 20% 且 流动性增长 < 10% → 无热度，离场
+            if pnl < 20 and liq_change_pct < 10:
+                logger.info(f"{pos.token_name}: 2分钟无热度 "
+                           f"pnl={pnl:.1f}% liq_chg={liq_change_pct:.1f}%，离场")
+                await self._execute_sell(pos, 100, 'no_momentum_2min')
+                return
+
+            # 情况三：pnl >= 20% 或 流动性增长 >= 10% → 有热度，继续持有
+            logger.info(f"{pos.token_name}: 2分钟评估通过，继续持有")
+
+        # ===== 阶段三：正常止盈止损 =====
+
+        # 止盈检查
+        if pnl >= 900 and not pos.tp_900_done:
+            await self._execute_sell(pos, 15, 'tp_900')
+            pos.tp_900_done = True
+            return
+        if pnl >= 400 and not pos.tp_400_done:
+            await self._execute_sell(pos, 25, 'tp_400')
+            pos.tp_400_done = True
+            return
+        if pnl >= 200 and not pos.tp_200_done:
+            await self._execute_sell(pos, 25, 'tp_200')
+            pos.tp_200_done = True
+            return
+        if pnl >= 100 and not pos.tp_100_done:
+            await self._execute_sell(pos, 25, 'tp_100')
+            pos.tp_100_done = True
+            return
+
+        # 追踪止损线更新
+        if pnl >= 900:
+            pos.trailing_stop_pct = 700
+        elif pnl >= 400:
+            pos.trailing_stop_pct = 300
+        elif pnl >= 200:
+            pos.trailing_stop_pct = 150
+        elif pnl >= 100:
+            pos.trailing_stop_pct = 50
+
+        # 追踪止损检查
+        if pos.trailing_stop_pct > 0 and pnl <= pos.trailing_stop_pct:
+            await self._execute_sell(pos, 100, 'trailing_stop')
+            return
+
+        # 初始止损（2-30分钟内）
+        if holding_minutes <= 30 and pnl <= -35:
+            await self._execute_sell(pos, 100, 'initial_stop_loss')
+            return
+
+        # 回撤止损
+        if pos.highest_pnl > 0:
+            drawdown = pos.highest_pnl - pnl
+            if drawdown >= 40:
+                await self._execute_sell(pos, 100, 'drawdown_40')
+                return
+
+        # 时间止损
+        if holding_minutes >= 6*60 and pnl < 20:
+            await self._execute_sell(pos, 50, 'time_stop_6h')
+            return
+        if holding_minutes >= 24*60 and pnl < 50:
+            await self._execute_sell(pos, 100, 'time_stop_24h')
+            return
+        if holding_minutes >= 72*60:
+            await self._execute_sell(pos, 100, 'time_stop_72h')
+            return
 
     async def _get_price_onchain(self, token_address: str, pair_address=None) -> Tuple[Optional[dict], str]:
         """
@@ -655,7 +721,7 @@ class PositionManager:
 
         try:
             session = await self._get_tg_session()
-            async with session.post(url, json=payload, timeout=aiohttp.ClientTimeout(total=10)) as response:
+            async with session.post(url, json=payload, timeout=aiohttp.ClientTimeout(total=5)) as response:
                 if response.status != 200:
                     logger.error(f"Telegram通知发送失败: {await response.text()}")
         except Exception as e:
@@ -671,7 +737,10 @@ class PositionManager:
         # 1. 初始止损 (前30分钟)
         time_held = time.time() - pos.buy_time
         if time_held < 1800: # 30 mins
-            initial_sl = cfg.get("initial_stop_loss", -50)
+            initial_sl = cfg.get("initial_stop_loss", -35)
+            # Ensure initial_sl is negative to avoid positive PnL triggers
+            if initial_sl > 0: initial_sl = -35
+            
             if pos.pnl_percentage <= initial_sl:
                 should_stop = True
                 reason = "initial_stop_loss"
@@ -693,17 +762,8 @@ class PositionManager:
                 # 检查是否跌破动态止损线
                 if pos.pnl_percentage <= current_level_sl:
                     should_stop = True
-                    reason = f"trailing_stop_profit_{current_level_sl}"
+                    reason = "trailing_stop"
             
-        # 3. 回撤止损 (从最高点回撤)
-        if not should_stop:
-            pullback_limit = cfg.get("pullback_threshold", 40)
-            if pos.highest_price > 0 and pos.highest_price > pos.buy_price_bnb * 1.1: # 至少涨一点
-                pullback = (pos.highest_price - pos.current_price) / pos.highest_price * 100
-                if pullback >= pullback_limit:
-                     should_stop = True
-                     reason = f"pullback_stop_{pullback_limit}"
-
         # 连续确认逻辑 (N=2, 间隔20秒)
         # 如果 should_stop 为 True，我们不立即卖出，而是开始/更新计数
         token = pos.token_address
@@ -957,12 +1017,13 @@ class PositionManager:
     async def _check_time_stop_loss(self, pos: Position) -> bool:
         """策略三：时间止损"""
         rules = self.config.get("time_stop", {}).get("rules", [])
-        # rules: [[6, 20, 50], [24, 50, 100]...]
+        # rules: [[0.75, 0, 100], [6, 20, 50]...]
         
         hours_held = (time.time() - pos.buy_time) / 3600
         
         for hours, min_pnl, sell_pct in rules:
-            rule_tag = f"time_stop_{hours}h"
+            rule_tag = "time_stop_loss" # Standardized tag as per user request
+            
             # 检查是否已执行过
             if any(r.get("reason") == rule_tag for r in pos.sold_portions):
                 continue
@@ -974,6 +1035,48 @@ class PositionManager:
                     await self._execute_sell(pos, sell_pct, rule_tag)
                     return True
                     
+        return False
+
+    async def _check_drawdown_stop_loss(self, pos: Position) -> bool:
+        """策略五：回撤止损"""
+        cfg = self.config.get("trailing_stop", {})
+        pullback_limit = cfg.get("pullback_threshold", 40)
+        
+        if pos.highest_price > 0 and pos.highest_price > pos.buy_price_bnb * 1.1: # 至少涨一点
+            pullback = (pos.highest_price - pos.current_price) / pos.highest_price * 100
+            if pullback >= pullback_limit:
+                 # Check N confirmation logic
+                 token = pos.token_address
+                 reason = "drawdown_40"
+                 
+                 if token not in self.pending_stop_loss:
+                    self.pending_stop_loss[token] = {
+                        "count": 1, 
+                        "first_trigger_time": time.time(),
+                        "reason": reason
+                    }
+                    logger.info(f"{pos.token_name} 触发回撤止损 ({reason})，等待二次确认...")
+                    return False
+                 else:
+                    pending = self.pending_stop_loss[token]
+                    if pending["reason"] != reason:
+                        # Reason changed, reset
+                        self.pending_stop_loss[token] = {
+                            "count": 1, 
+                            "first_trigger_time": time.time(),
+                            "reason": reason
+                        }
+                        return False
+                        
+                    elapsed = time.time() - pending["first_trigger_time"]
+                    
+                    if elapsed > 15:
+                        logger.info(f"{pos.token_name} 二次确认回撤止损 ({reason})，执行卖出!")
+                        del self.pending_stop_loss[token]
+                        await self._execute_sell(pos, 100, reason)
+                        return True
+                    else:
+                        return False
         return False
 
     def _check_daily_reset(self):
@@ -1066,213 +1169,4 @@ class PositionManager:
         
         logger.info("\n" + "\n".join(lines))
 
-async def price_monitor_loop():
-    """
-    每20秒查询一次所有活跃持仓的最新价格
-    这个函数必须作为独立的asyncio任务运行，不能被其他逻辑阻塞
-    """
-    while True:
-        try:
-            # 1. 从数据库获取所有status='active'的持仓
-            active_positions = await get_active_positions()
-            
-            if not active_positions:
-                await asyncio.sleep(20)
-                continue
-            
-            # 2. 并行查询所有持仓的价格（不要串行，太慢）
-            price_tasks = [
-                get_token_price(pos.token_address) 
-                for pos in active_positions
-            ]
-            prices = await asyncio.gather(*price_tasks, return_exceptions=True)
-            
-            # 3. 逐个更新价格并检查止盈止损
-            for pos, price_result in zip(active_positions, prices):
-                
-                # 如果价格查询失败，跳过这个币，不要用0覆盖
-                if isinstance(price_result, Exception):
-                    logger.warning(f"查询{pos.token_name}价格失败: {price_result}")
-                    continue
-                    
-                if price_result is None or price_result.get('price_bnb', 0) == 0:
-                    logger.warning(f"{pos.token_name}价格返回0，跳过本次更新")
-                    continue  # 关键！价格为0时绝对不能更新，更不能触发止损
-                
-                current_price = price_result['price_bnb']
-                
-                # 4. 更新数据库中的现价
-                await update_position_price(pos.token_address, current_price)
-                
-                # 5. 计算盈亏
-                pnl_pct = (current_price - pos.buy_price_bnb) / pos.buy_price_bnb * 100
-                
-                logger.info(f"{pos.token_name}: 现价={current_price:.8f} 买入价={pos.buy_price_bnb:.8f} 盈亏={pnl_pct:+.1f}%")
-                
-                # 6. 检查止盈止损（只有价格有效才检查）
-                await check_take_profit_stop_loss(pos, current_price, pnl_pct)
-                
-        except Exception as e:
-            logger.error(f"价格监控循环异常: {e}")
-            # 异常后等待，但不要退出循环！
-            
-        await asyncio.sleep(20)  # 每20秒一次
 
-
-_bnb_price_cache = {"price": 600.0, "ts": 0.0}  # 模块级BNB价格缓存
-
-async def get_bnb_price() -> float:
-    """
-    获取BNB/USD价格，优先使用缓存（TTL=60s）。
-    从多个公开API尝试，全部失败时返回上次缓存值（默认600.0）。
-    """
-    cache = _bnb_price_cache
-    if time.time() - cache["ts"] < 60:
-        return cache["price"]
-
-    urls = [
-        "https://api.binance.com/api/v3/ticker/price?symbol=BNBUSDT",
-        "https://api.coingecko.com/api/v3/simple/price?ids=binancecoin&vs_currencies=usd",
-    ]
-    async with aiohttp.ClientSession() as session:
-        for url in urls:
-            try:
-                async with session.get(url, timeout=aiohttp.ClientTimeout(total=4)) as resp:
-                    if resp.status == 200:
-                        data = await resp.json()
-                        if "price" in data:
-                            price = float(data["price"])
-                        elif "binancecoin" in data:
-                            price = float(data["binancecoin"]["usd"])
-                        else:
-                            continue
-                        cache["price"] = price
-                        cache["ts"] = time.time()
-                        return price
-            except Exception:
-                continue
-
-    # 全部失败，返回上次缓存值
-    logger.debug(f"BNB price APIs unavailable, using cached value: {cache['price']}")
-    return cache["price"]
-
-
-async def get_token_price(token_address: str) -> dict:
-    """
-    双数据源查询价格，任一成功即返回
-    优先用链上数据，备用DexScreener API
-    """
-    
-    # 方法一：链上查询（最准确）
-    try:
-        router = web3.eth.contract(address=ROUTER_ADDRESS, abi=ROUTER_ABI)
-        wbnb_address = "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c"
-        
-        # 用1个代币查询能换多少WBNB
-        amounts = router.functions.getAmountsOut(
-            10**18,  # 1个代币（18位小数）
-            [token_address, wbnb_address]
-        ).call()
-        
-        price_bnb = amounts[1] / 10**18
-        
-        if price_bnb > 0:
-            return {'price_bnb': price_bnb, 'source': 'onchain'}
-            
-    except Exception as e:
-        logger.debug(f"链上查询失败: {e}")
-    
-    # 方法二：DexScreener API（备用）
-    try:
-        url = f"https://api.dexscreener.com/latest/dex/tokens/{token_address}"
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, timeout=aiohttp.ClientTimeout(total=5)) as resp:
-                data = await resp.json()
-                
-                if data.get('pairs') and len(data['pairs']) > 0:
-                    pair = data['pairs'][0]
-                    price_usd = float(pair.get('priceUsd', 0))
-                    bnb_price_usd = await get_bnb_price()
-                    
-                    if price_usd > 0 and bnb_price_usd > 0:
-                        price_bnb = price_usd / bnb_price_usd
-                        return {'price_bnb': price_bnb, 'source': 'dexscreener'}
-                        
-    except Exception as e:
-        logger.debug(f"DexScreener查询失败: {e}")
-    
-    # 两个都失败，返回None（不返回0！）
-    return None
-
-async def check_take_profit_stop_loss(position, current_price: float, pnl_pct: float):
-    """
-    只有在价格有效的情况下才检查止盈止损
-    """
-    
-    # 安全检查：价格必须合理（不能是0，不能比买入价低99%以上）
-    if current_price <= 0:
-        logger.error(f"价格异常为0，跳过止损检查！{position.token_name}")
-        return
-    
-    # 防止误触发：跌幅超过99%时先确认流动性是否真的没了
-    if pnl_pct < -95:
-        logger.warning(f"{position.token_name}跌幅异常({pnl_pct:.1f}%)，二次确认中...")
-        await asyncio.sleep(10)
-        
-        # 10秒后再查一次
-        confirm_price = await get_token_price(position.token_address)
-        if confirm_price is None or confirm_price['price_bnb'] <= 0:
-            logger.warning(f"{position.token_name}二次确认价格仍异常，可能流动性已移除，执行止损")
-            await execute_sell(position.token_address, 100, "流动性移除止损")
-            return
-        
-        # 用确认后的价格重新计算
-        current_price = confirm_price['price_bnb']
-        pnl_pct = (current_price - position.buy_price_bnb) / position.buy_price_bnb * 100
-        
-        if pnl_pct > -95:
-            logger.info(f"{position.token_name}二次确认正常，价格恢复，不触发止损")
-            return
-    
-    # 更新最高价记录
-    if current_price > position.highest_price:
-        await update_highest_price(position.token_address, current_price)
-        position.highest_price = current_price
-    
-    # 追踪止损检查（从最高点回落超过40%）
-    if position.highest_price > 0:
-        drawdown = (position.highest_price - current_price) / position.highest_price * 100
-        
-        # 动态止损线
-        max_pnl = (position.highest_price - position.buy_price_bnb) / position.buy_price_bnb * 100
-        if max_pnl > 400:    # 曾经涨过5倍
-            stop_drawdown = 40
-        elif max_pnl > 200:  # 曾经涨过3倍
-            stop_drawdown = 45
-        else:
-            stop_drawdown = 50  # 默认止损
-        
-        if drawdown >= stop_drawdown:
-            await execute_sell(position.token_address, 100, f"追踪止损(从最高点回落{drawdown:.1f}%)")
-            return
-    
-    # 固定止损（买入后30分钟内）
-    holding_minutes = (datetime.now() - position.buy_time).seconds / 60
-    if holding_minutes < 30 and pnl_pct < -50:
-        await execute_sell(position.token_address, 100, f"早期止损({pnl_pct:.1f}%)")
-        return
-    
-    # 分批止盈检查
-    take_profit_levels = [
-        (100, 25, "止盈第1档2倍"),
-        (200, 25, "止盈第2档3倍"),
-        (400, 25, "止盈第3档5倍"),
-        (900, 15, "止盈第4档10倍"),
-    ]
-    
-    for target_pct, sell_pct, reason in take_profit_levels:
-        level_key = f"tp_{target_pct}"
-        if pnl_pct >= target_pct and level_key not in position.sold_portions:
-            await execute_sell(position.token_address, sell_pct, reason)
-            await mark_portion_sold(position.token_address, level_key)
-            break

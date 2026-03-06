@@ -15,7 +15,10 @@
       "WebFetch(domain:raw.githubusercontent.com)",
       "WebFetch(domain:www.emlahieu.blog)",
       "WebFetch(domain:medium.com)",
-      "WebFetch(domain:four-meme.gitbook.io)"
+      "WebFetch(domain:four-meme.gitbook.io)",
+      "Bash(bsc_botvenvScriptspython.exe:*)",
+      "Bash(D:/workSpace/tugou/bsc_bot/venv/Scripts/python.exe:*)",
+      "Bash(D:/workSpace/tugou/bsc_bot/venv/Scripts/pip.exe install:*)"
     ]
   }
 }

@@ -314,7 +314,12 @@ const Discoveries = () => {
                           )}
                         </td>
                         <td className="py-3 px-4">
-                          <StatusBadge status={item.status} reason={item.risk_reason} />
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <StatusBadge status={item.status} reason={item.risk_reason} />
+                            {item.is_delayed_honeypot && (
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-purple-50 text-purple-700 border border-purple-200" title="买入后2分钟评估被判定为延迟貔貅">🎭 延迟貔貅</span>
+                            )}
+                          </div>
                         </td>
                         <td className="py-3 px-4 text-right">
                           <button

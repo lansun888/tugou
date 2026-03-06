@@ -43,6 +43,10 @@ const normalizeAmount = (value) => {
   return num;
 };
 
+const DELAYED_HONEYPOT_REASONS = new Set(['liq_drain_2min', 'no_momentum_2min']);
+
+const isDelayedHoneypot = (reason) => DELAYED_HONEYPOT_REASONS.has(reason);
+
 const normalizeReason = (reason) => {
   if (!reason) return '';
   if (reason === 'take_profit') return '🎯止盈';
@@ -50,6 +54,8 @@ const normalizeReason = (reason) => {
   if (reason === 'stop_loss') return '🛑止损';
   if (reason === 'rug') return '☠️Rug';
   if (reason === 'manual') return '🖐️手动';
+  if (reason === 'liq_drain_2min') return '🎭延迟貔貅·撤池';
+  if (reason === 'no_momentum_2min') return '🎭延迟貔貅·无热度';
   return reason;
 };
 
@@ -252,6 +258,7 @@ const Trades = () => {
       const totalPnlBnb = sells.reduce((acc, t) => acc + (t.pnl_bnb || 0), 0);
       const pnlPercent = totalBuyBnb > 0 ? (totalPnlBnb / totalBuyBnb) * 100 : null;
       const latestTs = sorted.length > 0 ? sorted[0]._ts : 0;
+      const hasDelayedHoneypot = sells.some(t => isDelayedHoneypot(t.close_reason));
       return {
         ...group,
         trades: sorted,
@@ -259,7 +266,8 @@ const Trades = () => {
         totalSellBnb,
         totalPnlBnb,
         pnlPercent,
-        latestTs
+        latestTs,
+        hasDelayedHoneypot
       };
     });
 
@@ -429,6 +437,9 @@ const Trades = () => {
                                 <div className="flex items-center gap-3">
                                   {expanded ? <ChevronDownIcon className="w-4 h-4 text-gray-500" /> : <ChevronRightIcon className="w-4 h-4 text-gray-500" />}
                                   <span className="font-semibold text-gray-900">{group.token_symbol}</span>
+                                  {group.hasDelayedHoneypot && (
+                                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-purple-100 text-purple-700 border border-purple-200" title="该币在2分钟评估时被判定为延迟貔貅">🎭 延迟貔貅</span>
+                                  )}
                                   {group.token_name && group.token_name !== group.token_symbol && (
                                     <span className="text-sm font-normal text-gray-500">({group.token_name})</span>
                                   )}

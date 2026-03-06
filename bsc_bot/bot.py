@@ -2,6 +2,7 @@ import asyncio
 import logging
 import os
 import sys
+import time
 import yaml
 from datetime import datetime
 from loguru import logger
@@ -191,120 +192,141 @@ class TradingBot:
 
     async def process_single_pair(self, pair_data):
         """Process a single pair with parallel tasks and timing logs"""
+        def _ms(t0): return (time.perf_counter() - t0) * 1000
+
         try:
-            start_time = asyncio.get_running_loop().time()
+            t_total = time.perf_counter()
             token_address = pair_data["token"]["address"]
             token_symbol = pair_data["token"]["symbol"]
             deployer = pair_data["deployer"]
             pair_address = pair_data["pair"]
             dex_name = pair_data["dex"]
-            
-            logger.info(f"Processing new pair: {token_symbol} ({token_address}) on {dex_name}")
-            
+
+            liquidity_bnb = pair_data.get("liquidity_bnb", 0.0)
+            queue_size    = self.listener.queue.qsize()
+            logger.info(
+                f"Processing new pair: {token_symbol} ({token_address}) on {dex_name} "
+                f"| liq={liquidity_bnb:.2f} BNB | queue_remaining={queue_size}"
+            )
+
             # Check if paused
             if self.paused:
                 logger.warning("Bot is paused. Skipping new pair.")
                 return
 
-            # pair_listener 已在入队前做过 observe_liquidity（等待 monitor.observation_wait_time 秒）
-            # 这里只需做一次简短的二次观察（5秒）来捕获价格趋势变化，避免双重等待
             quick_observe_time = self.config.get("monitor", {}).get("quick_observe_time", 5)
 
-            # Capture Initial State for Observation
-            logger.info(f"Capturing initial state for {token_symbol}...")
-            initial_state = await self.security_checker.get_token_state(token_address, pair_address)
+            # ── 阶段1：初始状态获取（3s 超时，失败则跳过）──
+            # web3.py AsyncHTTPProvider 默认 30s 超时，必须显式限制
+            t1 = time.perf_counter()
+            try:
+                initial_state = await asyncio.wait_for(
+                    self.security_checker.get_token_state(token_address, pair_address),
+                    timeout=3.0
+                )
+            except asyncio.TimeoutError:
+                logger.warning(f"⏱️ 1.初始状态获取超时(>3s)，跳过")
+                initial_state = {}
+            dur1 = _ms(t1)   # ★ 立即捕获，后面汇总用 dur1 而非 _ms(t1)
+            logger.info(f"⏱️ 1.初始状态获取: {dur1:.0f}ms")
 
+            # ── 阶段2：快速观察等待 ──
+            t2 = time.perf_counter()
             if quick_observe_time > 0:
-                logger.info(f"Starting {quick_observe_time}s quick observation window...")
+                logger.info(f"⏱️ 2.快速观察等待: {quick_observe_time * 1000:.0f}ms (配置固定值)")
                 await asyncio.sleep(quick_observe_time)
+            else:
+                logger.info(f"⏱️ 2.快速观察等待: 跳过(quick_observe_time=0)")
 
-            logger.info(f"Observation finished. Starting parallel tasks (Analysis + Pre-build)...")
-            
-            # 1. Parallel Execution: Security Check + Transaction Pre-build
+            # ── 阶段3+4：安全分析 + 预构建交易（并行）──
+            t3 = time.perf_counter()
+
             async def run_security_check():
-                t0 = asyncio.get_running_loop().time()
+                ts = time.perf_counter()
                 res = await self.security_checker.analyze(
                     token_address=token_address,
                     deployer_address=deployer,
                     pair_address=pair_address,
                     initial_state=initial_state
                 )
-                logger.info(f"Security analysis took {asyncio.get_running_loop().time() - t0:.3f}s")
+                logger.info(f"⏱️ 3.安全分析(内部): {_ms(ts):.0f}ms  score={res.get('final_score')} decision={res.get('decision')}")
+                logger.info(f"    ├─ 分析耗时明细: analysis_time={res.get('analysis_time', 0)*1000:.0f}ms")
                 return res
-            
+
             async def run_pre_build():
-                return await self.executor.pre_build_buy_tx(token_address)
-            
+                ts = time.perf_counter()
+                result = await self.executor.pre_build_buy_tx(token_address)
+                logger.info(f"⏱️ 4.预构建交易: {_ms(ts):.0f}ms  ok={result is not None and 'tx' in (result or {})}")
+                return result
+
             security_task = asyncio.create_task(run_security_check())
             pre_build_task = asyncio.create_task(run_pre_build())
-            
+
             analysis_result = await security_task
             pre_built_data = await pre_build_task
-            
-            process_time = asyncio.get_running_loop().time() - start_time
-            logger.info(f"Total Pipeline finished in {process_time:.3f}s")
-            
+            dur34 = _ms(t3)   # ★ 立即捕获
+            logger.info(f"⏱️ 3+4.并行(安全分析+预构建)合计: {dur34:.0f}ms")
+
             score = analysis_result["final_score"]
             decision = analysis_result["decision"]
-            
-            # Check against configured minimum security score
+
             min_score = self.config.get("monitor", {}).get("min_security_score", 80)
             if score < min_score:
                 logger.info(f"Security Score {score} < {min_score}. REJECT.")
                 decision = "reject"
-            
+
             logger.info(f"Score: {score} | Decision: {decision}")
             for risk in analysis_result["risk_items"]:
                 logger.warning(f"Risk: {risk['desc']} ({risk['score']})")
 
-            # Update DB with analysis result
-            try:
-                import aiosqlite
-                import json
-                async with aiosqlite.connect(self.db_path) as db:
-                    risk_str = ",".join([r['desc'] for r in analysis_result["risk_items"]])
-                    status = "bought" if decision in ["buy", "half_buy"] else "rejected"
-                    if decision == "notify": status = "analyzing" 
+            # ── 阶段5：DB 更新（后台非阻塞，不占买入关键路径）──
+            import aiosqlite
+            import json
+            t5 = time.perf_counter()
 
-                    await db.execute(
-                        """UPDATE pairs SET 
-                           security_score = ?, 
-                           analysis_result = ?, 
-                           check_details = ?, 
-                           status = ?,
-                           risk_reason = ?
-                           WHERE pair_address = ?""",
-                        (
-                            score, 
-                            decision.upper(), 
-                            json.dumps(analysis_result["raw_data"]), 
-                            status, 
-                            risk_str, 
-                            pair_address
+            async def _update_pairs_db():
+                try:
+                    # timeout=1.0：本地写入超过 1s 说明 DB 被锁，立即放弃避免长等
+                    async with aiosqlite.connect(self.db_path, timeout=1.0) as db:
+                        risk_str = ",".join([r['desc'] for r in analysis_result["risk_items"]])
+                        status = "bought" if decision in ["buy", "half_buy"] else "rejected"
+                        if decision == "notify":
+                            status = "analyzing"
+                        await db.execute(
+                            """UPDATE pairs SET
+                               security_score = ?,
+                               analysis_result = ?,
+                               check_details = ?,
+                               status = ?,
+                               risk_reason = ?
+                               WHERE pair_address = ?""",
+                            (
+                                score,
+                                decision.upper(),
+                                json.dumps(analysis_result["raw_data"]),
+                                status,
+                                risk_str,
+                                pair_address,
+                            ),
                         )
-                    )
-                    await db.commit()
-            except Exception as e:
-                logger.error(f"Failed to update analysis result to DB: {e}")
-            
-            # 2. Auto Buy
+                        await db.commit()
+                except Exception as e:
+                    logger.error(f"Failed to update analysis result to DB: {e}")
+
+            # 立即启动后台任务，不等它完成就继续买入
+            db_write_task = asyncio.create_task(_update_pairs_db())
+            dur5 = _ms(t5)   # ★ 立即捕获（应为 <1ms）
+            logger.info(f"⏱️ 5.DB写入(后台启动): {dur5:.0f}ms")
+
+            # ── 阶段6：买入执行（立即，不等 DB）──
             if decision in ["buy", "half_buy"]:
-                buy_start = asyncio.get_running_loop().time()
-                
-                # Use Pre-built TX if available
+                t6 = time.perf_counter()
+
                 if pre_built_data and "tx" in pre_built_data:
                     logger.info("Using pre-built transaction for fast execution...")
-                    
-                    # Inject token symbol for better logging in executor
                     pre_built_data["token_symbol"] = token_symbol
-
-                    # Handle half_buy logic
                     if decision == "half_buy":
-                        original_value = pre_built_data["tx"]["value"]
-                        pre_built_data["tx"]["value"] = original_value // 2
-                        # Note: We don't update min_out here to be safe, relying on slippage tolerance or update it if needed
-                        # But updating it requires recalculation. For speed, we assume slippage is fine or config is set loose.
-                        
+                        pre_built_data["tx"]["value"] = pre_built_data["tx"]["value"] // 2
                     buy_result = await self.executor.fast_buy_token(pre_built_data)
                 else:
                     logger.warning("Pre-build failed or missing, falling back to standard buy")
@@ -314,40 +336,52 @@ class TradingBot:
                         token_symbol=token_symbol,
                         amount_multiplier=amount_multiplier
                     )
-                
+                # ★ 立即捕获耗时，之后不再用 _ms(t6)
+                dur6 = _ms(t6)
+                logger.info(f"⏱️ 6.买入执行: {dur6:.0f}ms  status={buy_result.get('status')}")
+
                 if buy_result["status"] == "success":
-                    total_time = asyncio.get_running_loop().time() - start_time
-                    buy_time = asyncio.get_running_loop().time() - buy_start
-                    logger.success(f"Buy Successful! Execution: {buy_time:.3f}s | Total Pipeline: {total_time:.3f}s")
-                    
-                    # 3. Add to Position Manager
                     amount_bnb_in = buy_result.get("amount_bnb_in", 0.0)
-                    token_amount = buy_result.get("amount", 0.0)
-                    buy_price = amount_bnb_in / token_amount if token_amount > 0 else 0.0
+                    token_amount  = buy_result.get("amount", 0.0)
+                    buy_price     = amount_bnb_in / token_amount if token_amount > 0 else 0.0
                     buy_gas_price = buy_result.get("buy_gas_price", 0)
 
-                    # 3. Fetch DexScreener Data for Initial Stats
-                    dex_data = {}
-                    try:
-                        logger.info(f"Fetching initial DexScreener data for {token_symbol}...")
-                        dex_data = await get_token_data(token_address)
-                        if dex_data:
-                            logger.info(f"Initial Dex Data: MarketCap=${dex_data.get('market_cap', 0):.0f}, Vol=${dex_data.get('volume_24h', 0):.0f}")
-                    except Exception as e:
-                        logger.warning(f"Failed to fetch initial DexScreener data: {e}")
+                    # ── 阶段7：DexScreener 后台发起，不阻塞仓位入库 ──
+                    # DexScreener 失败不影响持仓逻辑，position_manager 监控循环会自动补全
+                    asyncio.create_task(get_token_data(token_address))  # 真正后台
+                    logger.info("⏱️ 7.DexScreener: 后台启动，不计入关键路径")
 
+                    # ── 阶段8：仓位入库（立即，空 dex_data 可接受）──
+                    t8 = time.perf_counter()
                     await self.position_manager.add_position(
                         token_address=token_address,
                         token_name=token_symbol,
-                        buy_price=buy_price, 
-                        buy_amount_bnb=amount_bnb_in, 
+                        buy_price=buy_price,
+                        buy_amount_bnb=amount_bnb_in,
                         token_amount=token_amount,
                         buy_gas_price=buy_gas_price,
-                        dex_data=dex_data,
-                        pair_address=pair_address
+                        dex_data={},           # position_manager 监控会自动从 DexScreener 补全
+                        pair_address=pair_address,
+                        initial_liquidity_bnb=initial_state.get('liquidity_bnb', 0.0) if initial_state else 0.0
+                    )
+                    dur8 = _ms(t8)
+                    logger.info(f"⏱️ 8.仓位入库: {dur8:.0f}ms")
+
+                    total_ms = _ms(t_total)
+                    logger.success(
+                        f"⏱️ ══ 买入成功全流程耗时汇总（关键路径）══\n"
+                        f"    代币: {token_symbol} | 流动性: {liquidity_bnb:.2f} BNB\n"
+                        f"    1.初始状态:      {dur1:.0f}ms\n"
+                        f"    2.观察等待:      {quick_observe_time*1000:.0f}ms\n"
+                        f"    3+4.分析+预构建: {dur34:.0f}ms\n"
+                        f"    5.DB写入:        {dur5:.0f}ms (后台)\n"
+                        f"    6.买入执行:      {dur6:.0f}ms  ← 关键\n"
+                        f"    7.DexScreener:   后台\n"
+                        f"    8.仓位入库:      {dur8:.0f}ms\n"
+                        f"    ══ 关键路径总计: {total_ms:.0f}ms ══"
                     )
             else:
-                logger.info(f"Skipping {token_symbol} based on security check.")
+                logger.info(f"⏱️ 总耗时(被拒绝): {_ms(t_total):.0f}ms — {token_symbol} 未通过安全检测")
 
         except Exception as e:
             logger.error(f"Error processing pair {token_symbol if 'token_symbol' in locals() else 'Unknown'}: {e}")
