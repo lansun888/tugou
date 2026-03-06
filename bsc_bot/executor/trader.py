@@ -704,14 +704,21 @@ class BSCExecutor:
                 # Use _parse_transfer_log for precision
                 raw_token_amount = self._parse_transfer_log(receipt, token_address)
                 
-                # Get decimals
+                # Get decimals with retry
                 decimals = self.token_decimals_cache.get(token_address)
                 if not decimals:
-                    try:
-                        token_contract = self.w3.eth.contract(address=token_address, abi=ERC20_ABI)
-                        decimals = await token_contract.functions.decimals().call()
-                        self.token_decimals_cache[token_address] = decimals
-                    except:
+                    for _ in range(3): # Retry 3 times
+                        try:
+                            token_contract = self.w3.eth.contract(address=token_address, abi=ERC20_ABI)
+                            decimals = await token_contract.functions.decimals().call()
+                            self.token_decimals_cache[token_address] = decimals
+                            break
+                        except Exception as e:
+                            logger.warning(f"获取 Decimals 失败 (重试): {e}")
+                            await asyncio.sleep(1)
+                    
+                    if not decimals:
+                        logger.error(f"无法获取代币 {token_symbol} 的精度，默认使用 18。这可能导致价格计算错误！")
                         decimals = 18
                 
                 token_amount = raw_token_amount / (10 ** decimals)
@@ -1120,12 +1127,16 @@ class BSCExecutor:
             bnb_price_usd = await self._get_bnb_price_usd()
             
             # 2. Get Decimals (Cached)
-            if token_address in self.token_decimals_cache:
-                decimals = self.token_decimals_cache[token_address]
-            else:
-                token_contract = self.w3.eth.contract(address=token_address, abi=ERC20_ABI)
-                decimals = await token_contract.functions.decimals().call()
-                self.token_decimals_cache[token_address] = decimals
+            decimals = 18 # Default
+            try:
+                if token_address in self.token_decimals_cache:
+                    decimals = self.token_decimals_cache[token_address]
+                else:
+                    token_contract = self.w3.eth.contract(address=token_address, abi=ERC20_ABI)
+                    decimals = await token_contract.functions.decimals().call()
+                    self.token_decimals_cache[token_address] = decimals
+            except Exception as e:
+                logger.warning(f"获取 Decimals 失败，默认使用 18: {e}")
             
             price_bnb = 0.0
             liquidity_bnb = 0.0
