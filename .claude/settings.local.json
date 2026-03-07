@@ -26,7 +26,14 @@
       "Read(//c/Python312/**)",
       "Bash(ls /c/Python*/python.exe)",
       "Bash(/c/Users/admin/AppData/Local/Programs/Python/Python312/python.exe:*)",
-      "Bash(wmic process:*)"
+      "Bash(wmic process:*)",
+      "Bash(python:*)",
+      "Bash(ls /c/Python*)",
+      "Read(//c/Users/admin/AppData/Local/Programs/Python/**)",
+      "Bash(py:*)",
+      "Bash(sqlite3:*)",
+      "Bash(where:*)",
+      "Bash(PYTHONIOENCODING=utf-8 /c/Users/admin/AppData/Local/Programs/Python/Python312/python.exe:*)"
     ]
   }
 }

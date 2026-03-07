@@ -23,27 +23,23 @@ export const formatPercent = (value) => {
 
 export const formatPrice = (price) => {
   if (!price || price === 0) return '0.00000000';
-  
+
   const num = Number(price);
   if (isNaN(num)) return '0.00000000';
 
-  // 统一显示8位有效小数，去掉末尾多余的0 
-  if (num < 0.00000001) return num.toExponential(4);  // 极小值才用科学计数 
-  
-  // 找到第一个非零位，然后保留后面6位有效数字 
-  const str = num.toFixed(12);
-  const match = str.match(/0\.(0*)([1-9].{0,7})/);
-  
-  if (match) { 
-    const zeros = match[1];
-    // match[2] is the significant part starting with non-zero.
-    // User wants "保留后面6位有效数字" (keep 6 significant digits).
-    const significant = match[2].slice(0, 6);
-    return '0.' + zeros + significant;
-  } 
-  
-  // Fallback
-  return num.toFixed(8).replace(/\.?0+$/, '');
+  // >= 0.01：4位小数
+  if (num >= 0.01) return num.toFixed(4);
+
+  // 找到第一个非零位，保留6位有效数字（支持到 1e-14 不用科学计数）
+  const str = num.toFixed(14);
+  const match = str.match(/0\.(0*)([1-9]\d{0,5})/);
+
+  if (match) {
+    return '0.' + match[1] + match[2];
+  }
+
+  // 极端兜底（理论上不会触发）
+  return num.toExponential(4);
 };
 
 // 日期格式化

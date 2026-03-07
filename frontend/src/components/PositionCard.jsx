@@ -351,7 +351,12 @@ const PositionCard = ({ pos, onSell }) => {
       <div className="grid grid-cols-3 gap-2 mb-4 text-center border-b border-slate-800 pb-4">
         <div className="border-r border-slate-800 pr-2">
           <Text className="text-slate-500 text-xs mb-1">买入价</Text>
-          <Text className="text-slate-300 font-mono text-sm">{formatPrice(buyPrice)}</Text>
+          <EditablePrice
+            value={pos.buy_price_bnb}
+            fieldName="buy_price_bnb"
+            tokenAddress={pos.token_address}
+            color="text-slate-300"
+          />
         </div>
         <div className="border-r border-slate-800 px-2">
           <Text className="text-slate-500 text-xs mb-1">现价</Text>

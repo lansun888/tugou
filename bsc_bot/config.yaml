@@ -9,6 +9,7 @@ monitor:
     biswap: true
     pancakeswap_v2: true
     pancakeswap_v3: true
+    four_meme: false          # four.meme TokenCreate 监听开关，false=关闭
   enable_new_token_sniping: true
   enable_whale_watching: true
   min_liquidity_bnb: 10
@@ -101,7 +102,7 @@ trading:
   deadline_seconds: 45
 
 four_meme:
-  enabled: true
+  enabled: false              # 总开关，false=关闭所有 four.meme 功能
   contract: "0x5c952063c7fc8610FFDB798152D69F0B9550762b"
   min_score: 75
   buy_amount: 0.05
@@ -115,6 +116,12 @@ four_meme:
     default_limit: 300000
     frontrun_multiplier: 1.5
     mode: normal
+  near_graduation:
+    enabled: false          # 设为 true 开启近毕业抢买
+    trigger_pct: 80         # 募资达到 80% 触发
+    buy_amount: 0.03        # 比正常买入少（风险控制）
+    poll_interval: 15       # 每 15 秒轮询一次
+    max_wait_minutes: 10    # 超过 10 分钟未毕业则放弃
     normal_multiplier: 1.15
   initial_stop_loss: -35
   protection_period_minutes: 2

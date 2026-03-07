@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Card, Title, Text, Badge, Select, SelectItem, Metric, TextInput } from '@tremor/react';
 import api from '../utils/api';
 import { formatNumber, formatTimeAgo, formatPrice } from '../utils/formatters';
-import { ExternalLinkIcon, ArrowRightIcon, ArrowLeftIcon, ChevronDownIcon, ChevronRightIcon, SearchIcon } from 'lucide-react';
+import { ExternalLinkIcon, ChevronDownIcon, ChevronRightIcon, SearchIcon } from 'lucide-react';
 import GmgnLink from '../components/common/GmgnLink';
 
 const parseDate = (value) => {
@@ -128,8 +128,6 @@ const Trades = () => {
   const [filterPnl, setFilterPnl] = useState('all');      // all | profit | loss
   const [filterTime, setFilterTime] = useState('all');    // all | today | 7d | 30d
   const [searchToken, setSearchToken] = useState('');
-  const [page, setPage] = useState(1);
-  const [hasMore, setHasMore] = useState(true);
   const [expandedGroups, setExpandedGroups] = useState({});
   const [todayStats, setTodayStats] = useState(null);
 
@@ -160,24 +158,22 @@ const Trades = () => {
     try {
       const response = await api.get('/trades', {
         params: {
-          page,
-          limit: 20,
+          page: 1,
+          limit: 500,
           type: filterType !== 'all' ? filterType : undefined
         }
       });
       if (response && Array.isArray(response)) {
         setTrades(response);
-        setHasMore(response.length === 20);
       } else {
         setTrades([]);
-        setHasMore(false);
       }
     } catch (error) {
       console.error('Failed to fetch trades:', error);
     } finally {
       setLoading(false);
     }
-  }, [page, filterType]);
+  }, [filterType]);
 
   useEffect(() => {
     fetchTrades();
@@ -328,7 +324,6 @@ const Trades = () => {
 
   const handleFilterChange = (value) => {
     setFilterType(value);
-    setPage(1);
   };
 
   const getBscScanLink = (hash) => `https://bscscan.com/tx/${hash}`;
@@ -348,7 +343,7 @@ const Trades = () => {
           icon={SearchIcon}
           placeholder="搜索币种名称/地址..."
           value={searchToken}
-          onChange={(e) => { setSearchToken(e.target.value); setPage(1); }}
+          onChange={(e) => { setSearchToken(e.target.value); }}
           className="w-56"
         />
         <div className="w-36">
@@ -359,7 +354,7 @@ const Trades = () => {
           </Select>
         </div>
         <div className="w-36">
-          <Select value={filterTime} onValueChange={(v) => { setFilterTime(v); setPage(1); }}>
+          <Select value={filterTime} onValueChange={(v) => { setFilterTime(v); }}>
             <SelectItem value="all">全部时间</SelectItem>
             <SelectItem value="today">今天</SelectItem>
             <SelectItem value="7d">近7天</SelectItem>
@@ -367,7 +362,7 @@ const Trades = () => {
           </Select>
         </div>
         <div className="w-36">
-          <Select value={filterPnl} onValueChange={(v) => { setFilterPnl(v); setPage(1); }}>
+          <Select value={filterPnl} onValueChange={(v) => { setFilterPnl(v); }}>
             <SelectItem value="all">全部盈亏</SelectItem>
             <SelectItem value="profit">仅盈利</SelectItem>
             <SelectItem value="loss">仅亏损</SelectItem>
@@ -375,7 +370,7 @@ const Trades = () => {
         </div>
         {(searchToken || filterType !== 'all' || filterTime !== 'all' || filterPnl !== 'all') && (
           <button
-            onClick={() => { setSearchToken(''); setFilterType('all'); setFilterTime('all'); setFilterPnl('all'); setPage(1); }}
+            onClick={() => { setSearchToken(''); setFilterType('all'); setFilterTime('all'); setFilterPnl('all'); }}
             className="text-xs text-indigo-600 hover:text-indigo-800 underline"
           >清除筛选</button>
         )}
@@ -565,22 +560,8 @@ const Trades = () => {
               </table>
             </div>
 
-            <div className="flex justify-between items-center mt-4 pt-4 border-t border-gray-100">
-              <button
-                onClick={() => setPage(p => Math.max(1, p - 1))}
-                disabled={page === 1}
-                className="flex items-center gap-1 text-sm text-gray-600 hover:text-gray-900 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <ArrowLeftIcon className="w-4 h-4" /> 上一页
-              </button>
-              <span className="text-sm text-gray-500">Page {page}</span>
-              <button
-                onClick={() => setPage(p => p + 1)}
-                disabled={!hasMore}
-                className="flex items-center gap-1 text-sm text-gray-600 hover:text-gray-900 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                下一页 <ArrowRightIcon className="w-4 h-4" />
-              </button>
+            <div className="flex justify-end items-center mt-4 pt-4 border-t border-gray-100">
+              <span className="text-sm text-gray-400">共 {trades.length} 条记录 · {groupedTrades.length} 个币种</span>
             </div>
           </>
         )}

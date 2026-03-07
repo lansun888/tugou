@@ -688,23 +688,28 @@ class BSCExecutor:
                     price_bnb = 0.0
 
                 if price_bnb == 0:
-                    # four_meme 最终兜底：从链上 totalSupply 估算（DexScreener 未收录时）
+                    # four_meme 最终兜底：直接用 bonding curve 链上公式（比 totalSupply 估算准确）
                     if dex_name == "four_meme":
                         try:
-                            _decimals = self.token_decimals_cache.get(token_address, 18)
-                            _tc = self.w3.eth.contract(
-                                address=self.w3_to_checksum(token_address), abi=ERC20_ABI
-                            )
-                            _ts_raw = await _tc.functions.totalSupply().call()
-                            _ts = _ts_raw / (10 ** _decimals)
-                            if _ts > 0:
-                                price_bnb = 3.0 / _ts  # 假设初始市值 ~3 BNB
-                                logger.info(
-                                    f"[four_meme] totalSupply估算价格: {price_bnb:.2e} BNB/token "
-                                    f"(supply={_ts:.0f})"
-                                )
-                        except Exception:
-                            price_bnb = 3e-9  # 兜底：1B supply，3 BNB 市值
+                            _FACTORY = '0x5c952063c7fc8610FFDB798152D69F0B9550762b'
+                            _token_padded = '000000000000000000000000' + token_address[2:].lower()
+                            _call_data = bytes.fromhex('e684626b' + _token_padded)
+                            _result = await self.w3.eth.call({
+                                'to': AsyncWeb3.to_checksum_address(_FACTORY),
+                                'data': _call_data,
+                            })
+                            if _result and len(_result) >= 12 * 32:
+                                _raw = _result.hex()
+                                _slot10 = int(_raw[10 * 64:11 * 64], 16)
+                                _slot11 = int(_raw[11 * 64:12 * 64], 16)
+                                if _slot11 > 0:
+                                    price_bnb = (_slot10 * 10 ** 18) / (_slot11 ** 2)
+                                    logger.info(f"[four_meme] bonding curve买入价: {price_bnb:.2e} BNB/token")
+                        except Exception as _e:
+                            logger.debug(f"[four_meme] 链上买入价查询失败: {_e}")
+                        if price_bnb == 0:
+                            price_bnb = 5.74e-9  # 兜底：four.meme bonding curve 标准初始价格
+                            logger.info(f"[four_meme] 使用默认初始价格: {price_bnb:.2e} BNB/token")
                     else:
                         price_bnb = 0.001  # 普通代币最终兜底
 
@@ -763,33 +768,36 @@ class BSCExecutor:
                 }
 
             amount_in_wei = self.w3.to_wei(amount_bnb_in, 'ether')
-            
+
             # 1. 检查余额
             balance = await self.w3.eth.get_balance(self.account.address)
             if balance < amount_in_wei:
                 logger.error(f"BNB 余额不足: {self.w3.from_wei(balance, 'ether')} < {amount_bnb_in}")
                 return {"status": "failed", "reason": "insufficient_balance"}
 
+            # ===== Four.meme bonding curve：直接调用 factory 买入 =====
+            if dex_name == "four_meme":
+                return await self._buy_on_four_meme(token_address, amount_bnb_in)
+
+            # ===== 普通代币：PancakeSwap 路由买入 =====
             # 2. 计算最小获得代币数量 (minAmountOut)
-            # path: WBNB -> Token
             path = [self.WBNB_ADDRESS, token_address]
             amounts_out = await self.router.functions.getAmountsOut(amount_in_wei, path).call()
             expected_token_out = amounts_out[-1]
-            
-            # 最小数量 = 预期数量 * (1 - 滑点%) * 0.99 (安全余量)
+
             min_token_out = int(expected_token_out * (1 - slippage_percent/100) * 0.99)
-            
+
             logger.info(f"准备买入 {token_symbol}: 投入 {amount_bnb_in} BNB, 预期获得 {expected_token_out}, 最小接受 {min_token_out}")
 
             # 4. 构建交易
             nonce = await self.get_nonce()
             gas_price = await self._get_gas_price()
             deadline = int(time.time()) + deadline_secs
-            
+
             tx_func = self.router.functions.swapExactETHForTokensSupportingFeeOnTransferTokens(
                 min_token_out, path, self.account.address, deadline
             )
-            
+
             tx_params = {
                 'from': self.account.address,
                 'value': amount_in_wei,
@@ -798,7 +806,7 @@ class BSCExecutor:
                 'chainId': self.config.get("network", {}).get("chain_id", 56),
                 'gas': 500000
             }
-            
+
             # 5. 发送交易
             tx = await tx_func.build_transaction(tx_params)
             signed_tx = self.w3.eth.account.sign_transaction(tx, private_key=self.account.key)
@@ -908,11 +916,7 @@ class BSCExecutor:
         """
         Unified entry point for buying (Manual, Snipe, etc.)
         """
-        dex_name = None
-        if "four_meme" in buy_reason:
-            dex_name = "four_meme"
-        
-        return await self.buy_token(token_address, token_symbol="UNKNOWN", amount_bnb=amount_bnb, dex_name=dex_name)
+        return await self.buy_token(token_address, token_symbol="UNKNOWN", amount_bnb=amount_bnb, dex_name=None)
 
     async def sell_token(self, token_address, token_symbol="UNKNOWN", sell_percentage=100, slippage=None, gas_price=None, simulated_balance=None, pnl_bnb=0.0, pnl_percentage=0.0, manual_price=None, sell_percentage_real=None, cost_basis_bnb=None, dex_name=None):
         """
@@ -1030,31 +1034,41 @@ class BSCExecutor:
                 return {"status": "failed", "reason": "amount_too_small"}
                 
             logger.info(f"准备卖出 {token_symbol}: 数量 {sell_amount} ({sell_percentage}%)")
-            
+
+            if slippage is None:
+                slippage = float(self.config.get("trading", {}).get("slippage", 15))
+
+            # ===== Four.meme bonding curve：使用 factory 专用卖出函数 =====
+            if dex_name == "four_meme":
+                return await self._sell_on_four_meme(
+                    token_address, token_symbol, token_contract,
+                    sell_amount, sell_percentage, slippage, gas_price,
+                    pnl_bnb, pnl_percentage, sell_percentage_real,
+                    cost_basis_bnb, dex_name
+                )
+
+            # ===== 普通代币：PancakeSwap 路由卖出 =====
             # 2. 检查并授权 (Approve)
             allowance = await token_contract.functions.allowance(self.account.address, self.ROUTER_ADDRESS).call()
             if allowance < sell_amount:
                 logger.info(f"授权额度不足 ({allowance} < {sell_amount})，正在授权...")
                 await self._approve_token(token_contract, token_address)
-                
+
             # 3. 计算最小获得 BNB
             path = [token_address, self.WBNB_ADDRESS]
             amounts_out = await self.router.functions.getAmountsOut(sell_amount, path).call()
             expected_bnb_out = amounts_out[-1]
-            
-            if slippage is None:
-                slippage = float(self.config.get("trading", {}).get("slippage", 15))
-            
+
             min_bnb_out = int(expected_bnb_out * (1 - slippage/100) * 0.99)
-            
+
             # 4. 构建卖出交易
             nonce = await self.w3.eth.get_transaction_count(self.account.address)
-            
+
             if gas_price is None:
                 gas_price = await self._get_gas_price()
-                
+
             deadline = int(time.time()) + int(self.config.get("trading", {}).get("deadline_seconds", 45))
-            
+
             tx_func = self.router.functions.swapExactTokensForETHSupportingFeeOnTransferTokens(
                 sell_amount,
                 min_bnb_out,
@@ -1154,6 +1168,162 @@ class BSCExecutor:
         except Exception as e:
             logger.error(f"卖出执行异常: {e}")
             return {"status": "failed", "reason": str(e)}
+
+    # ─── Four.meme 专用买卖函数（链上验证 2026-03-07）─────────────────────────
+    # Buy:  0x87f27655(address token, uint256 amountBNB, uint256 minTokenOut) payable
+    # Sell: 0x3e11741f(address token, uint256 tokenAmount, uint256 minBNBOut)
+    # Factory: 0x5c952063c7fc8610FFDB798152D69F0B9550762b（EIP-1967 proxy）
+
+    FOUR_MEME_FACTORY = '0x5c952063c7fc8610FFDB798152D69F0B9550762b'
+    FOUR_MEME_BUY_SEL  = bytes.fromhex('87f27655')  # buy(address,uint256,uint256) payable
+    FOUR_MEME_SELL_SEL = bytes.fromhex('3e11741f')  # sell(address,uint256,uint256)
+
+    async def _buy_on_four_meme(self, token_address: str, amount_bnb: float,
+                                 min_token_out: int = 0) -> dict:
+        """
+        在 four.meme bonding curve 内买入代币。
+        直接调用 factory.0x87f27655(token, amountBNB, minTokenOut)，
+        不经过 PancakeSwap 路由。
+        """
+        factory = AsyncWeb3.to_checksum_address(self.FOUR_MEME_FACTORY)
+        amount_wei = self.w3.to_wei(amount_bnb, 'ether')
+        token_cs = AsyncWeb3.to_checksum_address(token_address)
+
+        # ABI 编码：token(address) + amountBNB(uint256) + minTokenOut(uint256)
+        token_padded   = bytes.fromhex('000000000000000000000000' + token_cs[2:].lower())
+        amount_padded  = amount_wei.to_bytes(32, 'big')
+        min_out_padded = min_token_out.to_bytes(32, 'big')
+        call_data = self.FOUR_MEME_BUY_SEL + token_padded + amount_padded + min_out_padded
+
+        nonce = await self.w3.eth.get_transaction_count(self.account.address)
+        gas_price = await self._get_gas_price()
+        tx = {
+            'to': factory,
+            'data': call_data,
+            'value': amount_wei,
+            'from': self.account.address,
+            'nonce': nonce,
+            'gasPrice': gas_price,
+            'chainId': self.config.get('network', {}).get('chain_id', 56),
+        }
+        try:
+            estimated = await self.w3.eth.estimate_gas(tx)
+            tx['gas'] = int(estimated * 1.3)
+        except Exception:
+            tx['gas'] = 350000
+
+        signed = self.w3.eth.account.sign_transaction(tx, private_key=self.account.key)
+        tx_hash = await self.w3.eth.send_raw_transaction(signed.raw_transaction)
+        tx_hash_hex = self.w3.to_hex(tx_hash)
+        logger.info(f"[four_meme] 买入交易已发送: {tx_hash_hex}")
+
+        receipt = await self.w3.eth.wait_for_transaction_receipt(tx_hash, timeout=60)
+        if receipt.status == 1:
+            logger.success(f"[four_meme] 买入成功 {amount_bnb} BNB")
+            return {"status": "success", "tx_hash": tx_hash_hex, "amount_bnb": amount_bnb}
+        else:
+            logger.error(f"[four_meme] 买入失败: {tx_hash_hex}")
+            return {"status": "failed", "tx_hash": tx_hash_hex, "reason": "tx_reverted"}
+
+    async def _sell_on_four_meme(self, token_address, token_symbol, token_contract,
+                                  sell_amount, sell_percentage, slippage, gas_price,
+                                  pnl_bnb, pnl_percentage, sell_percentage_real,
+                                  cost_basis_bnb, dex_name) -> dict:
+        """
+        在 four.meme bonding curve 内卖出代币。
+        使用 factory.0x3e11741f(token, tokenAmount, minBNBOut)，
+        需先 approve factory（非 PancakeSwap 路由）。
+        """
+        factory = AsyncWeb3.to_checksum_address(self.FOUR_MEME_FACTORY)
+        token_cs = AsyncWeb3.to_checksum_address(token_address)
+
+        # 1. Approve factory（若额度不足）
+        allowance = await token_contract.functions.allowance(
+            self.account.address, factory
+        ).call()
+        if allowance < sell_amount:
+            logger.info(f"[four_meme] 授权 factory 卖出额度...")
+            max_uint256 = 2**256 - 1
+            nonce_ap = await self.w3.eth.get_transaction_count(self.account.address)
+            gp_ap = await self._get_gas_price()
+            ap_tx = await token_contract.functions.approve(factory, max_uint256).build_transaction({
+                'from': self.account.address, 'gasPrice': gp_ap, 'nonce': nonce_ap,
+                'chainId': self.config.get('network', {}).get('chain_id', 56), 'gas': 100000
+            })
+            signed_ap = self.w3.eth.account.sign_transaction(ap_tx, private_key=self.account.key)
+            ap_hash = await self.w3.eth.send_raw_transaction(signed_ap.raw_transaction)
+            await self.w3.eth.wait_for_transaction_receipt(ap_hash, timeout=60)
+            logger.info(f"[four_meme] 授权完成: {self.w3.to_hex(ap_hash)}")
+
+        # 2. 估算最小获得 BNB（根据链上价格 + 滑点）
+        min_bnb_out = 0
+        try:
+            price_info = await self.get_token_price(token_address, platform="four_meme")
+            if price_info and price_info.get("price_bnb", 0) > 0:
+                token_decimals = await token_contract.functions.decimals().call()
+                sell_tokens = sell_amount / 10 ** token_decimals
+                expected_bnb = sell_tokens * price_info["price_bnb"]
+                min_bnb_out = int(self.w3.to_wei(expected_bnb * (1 - slippage / 100) * 0.95, 'ether'))
+        except Exception:
+            pass  # min_bnb_out=0 接受任意输出
+
+        # 3. 构建卖出调用
+        token_padded    = bytes.fromhex('000000000000000000000000' + token_cs[2:].lower())
+        amount_padded   = sell_amount.to_bytes(32, 'big')
+        min_bnb_padded  = min_bnb_out.to_bytes(32, 'big')
+        call_data = self.FOUR_MEME_SELL_SEL + token_padded + amount_padded + min_bnb_padded
+
+        nonce = await self.w3.eth.get_transaction_count(self.account.address)
+        if gas_price is None:
+            gas_price = await self._get_gas_price()
+        tx = {
+            'to': factory, 'data': call_data, 'value': 0,
+            'from': self.account.address, 'nonce': nonce, 'gasPrice': gas_price,
+            'chainId': self.config.get('network', {}).get('chain_id', 56),
+        }
+        try:
+            estimated = await self.w3.eth.estimate_gas(tx)
+            tx['gas'] = int(estimated * 1.3)
+        except Exception:
+            tx['gas'] = 400000
+
+        signed = self.w3.eth.account.sign_transaction(tx, private_key=self.account.key)
+        tx_hash = await self.w3.eth.send_raw_transaction(signed.raw_transaction)
+        tx_hash_hex = self.w3.to_hex(tx_hash)
+        logger.info(f"[four_meme] 卖出交易已发送: {tx_hash_hex}")
+
+        receipt = await self.w3.eth.wait_for_transaction_receipt(tx_hash, timeout=60)
+        if receipt.status != 1:
+            logger.error(f"[four_meme] 卖出失败: {tx_hash_hex}")
+            return {"status": "failed", "tx_hash": tx_hash_hex, "reason": "tx_reverted"}
+
+        # 4. 解析 BNB 实际收到量
+        bnb_received = self._parse_swap_output_log(receipt) / 1e18
+        logger.success(f"[four_meme] 卖出成功: {bnb_received:.6f} BNB")
+
+        final_sell_pct = sell_percentage_real if sell_percentage_real is not None else sell_percentage
+        price_bnb = (bnb_received / (sell_amount / 1e18)) if sell_amount > 0 else 0.0
+        if cost_basis_bnb and cost_basis_bnb > 0:
+            pnl_bnb = bnb_received - cost_basis_bnb
+            pnl_percentage = (pnl_bnb / cost_basis_bnb) * 100
+
+        await self._log_trade(
+            token_address, token_symbol, "sell",
+            str(sell_amount / 1e18), str(bnb_received),
+            tx_hash_hex, "success",
+            price_bnb=str(price_bnb),
+            token_symbol=token_symbol,
+            pnl_bnb=pnl_bnb, pnl_percentage=pnl_percentage,
+            sell_percentage=final_sell_pct,
+            expected_amount=bnb_received, actual_amount=bnb_received,
+            slippage_pct=slippage, slippage_bnb=0.0,
+            gas_used=receipt.gasUsed,
+            gas_price_gwei=gas_price / 1e9,
+            gas_cost_bnb=receipt.gasUsed * gas_price / 1e18,
+            total_cost_bnb=receipt.gasUsed * gas_price / 1e18,
+            dex_name=dex_name
+        )
+        return {"status": "success", "tx_hash": tx_hash_hex, "amount_bnb": bnb_received}
 
     async def _approve_token(self, token_contract, token_address):
         """内部函数：授权代币"""
@@ -1256,17 +1426,28 @@ class BSCExecutor:
             # 1. 获取 BNB 价格
             bnb_price_usd = await self._get_bnb_price_usd()
 
-            # 2. Get Decimals (Cached)
-            decimals = 18 # Default
+            # 2. Get Decimals (Cached, with retry)
+            decimals = 18  # Default
+            decimals_ok = False
             try:
                 if token_address in self.token_decimals_cache:
                     decimals = self.token_decimals_cache[token_address]
+                    decimals_ok = True
                 else:
-                    token_contract = self.w3.eth.contract(address=token_address, abi=ERC20_ABI)
-                    decimals = await token_contract.functions.decimals().call()
-                    self.token_decimals_cache[token_address] = decimals
+                    for _attempt in range(3):
+                        try:
+                            token_contract = self.w3.eth.contract(address=token_address, abi=ERC20_ABI)
+                            decimals = await token_contract.functions.decimals().call()
+                            self.token_decimals_cache[token_address] = decimals
+                            decimals_ok = True
+                            break
+                        except Exception as _e:
+                            if _attempt < 2:
+                                await asyncio.sleep(0.3)
+                            else:
+                                logger.warning(f"获取 Decimals 失败（3次重试后放弃），使用默认18: {_e}")
             except Exception as e:
-                logger.warning(f"获取 Decimals 失败，默认使用 18: {e}")
+                logger.warning(f"获取 Decimals 异常: {e}")
 
             price_bnb = 0.0
             liquidity_bnb = 0.0
@@ -1308,7 +1489,8 @@ class BSCExecutor:
                     liquidity_bnb = float(self.w3.from_wei(reserve_bnb, 'ether'))
 
                     # 计算价格: Price = BNB_Reserve / Token_Reserve
-                    if reserve_token > 0:
+                    # 必须确认 decimals 正确，否则非18位代币（如 decimals=8）会计算出错误价格
+                    if reserve_token > 0 and decimals_ok:
                         adj_reserve_bnb = reserve_bnb / (10 ** 18)
                         adj_reserve_token = reserve_token / (10 ** decimals)
                         if adj_reserve_token > 0:
@@ -1316,17 +1498,40 @@ class BSCExecutor:
             except Exception as e:
                 logger.warning(f"储备量价格计算失败: {e}")
 
-            # 4a. four_meme bonding curve：pair 不存在时走 DexScreener，不走路由（会 revert）
+            # 4a. four_meme bonding curve：pair 不存在时走 factory 链上公式，不走路由（会 revert）
             if price_bnb == 0 and is_four_meme:
                 try:
-                    from bsc_bot.utils.dexscreener_client import get_token_data
-                    dex_data = await get_token_data(token_address)
-                    if dex_data and dex_data.get("price_bnb", 0) > 0:
-                        price_bnb = dex_data["price_bnb"]
-                        liquidity_bnb = dex_data.get("liquidity_bnb", 0.0)
-                        logger.debug(f"[four_meme] DexScreener价格: {price_bnb:.2e} BNB/token")
+                    FACTORY = '0x5c952063c7fc8610FFDB798152D69F0B9550762b'
+                    token_padded = '000000000000000000000000' + token_address[2:].lower()
+                    call_data = bytes.fromhex('e684626b' + token_padded)
+                    from web3 import AsyncWeb3
+                    result = await self.w3.eth.call({
+                        'to': AsyncWeb3.to_checksum_address(FACTORY),
+                        'data': call_data,
+                    })
+                    if result and len(result) >= 12 * 32:
+                        raw = result.hex()
+                        slot10 = int(raw[10 * 64:11 * 64], 16)
+                        slot11 = int(raw[11 * 64:12 * 64], 16)
+                        slot8  = int(raw[8  * 64:9  * 64], 16)
+                        if slot11 > 0:
+                            price_bnb = (slot10 * 10 ** 18) / (slot11 ** 2)
+                            bnb_raised = slot8 / 1e18
+                            virtual_bnb = (slot10 * 1e18 / slot11) / 1e18
+                            liquidity_bnb = max(bnb_raised, virtual_bnb) * 2
+                            logger.debug(f"[four_meme] 链上价格: {price_bnb:.4e} BNB/token")
                 except Exception as e:
-                    logger.debug(f"[four_meme] DexScreener价格查询失败: {e}")
+                    logger.debug(f"[four_meme] 链上价格查询失败: {e}")
+                # 链上失败时回退 DexScreener
+                if price_bnb == 0:
+                    try:
+                        from bsc_bot.utils.dexscreener_client import get_token_data
+                        dex_data = await get_token_data(token_address)
+                        if dex_data and dex_data.get("price_bnb", 0) > 0:
+                            price_bnb = dex_data["price_bnb"]
+                            liquidity_bnb = dex_data.get("liquidity_bnb", 0.0)
+                    except Exception:
+                        pass
 
             # 4b. 普通代币：路由 getAmountsOut fallback（four_meme 跳过，避免 revert）
             if price_bnb == 0 and not is_four_meme:

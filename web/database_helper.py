@@ -434,9 +434,10 @@ class DatabaseHelper:
                 -- Old trade-based win/loss (kept for reference or backward compat if needed, but we overwrite below)
                 SUM(CASE WHEN action='sell' AND status='success' AND pnl_bnb > 0 THEN 1 ELSE 0 END) as trade_win_count,
                 SUM(CASE WHEN action='sell' AND status='success' AND pnl_bnb <= 0 THEN 1 ELSE 0 END) as trade_loss_count,
-                (SUM(CASE WHEN action='sell' AND status='success' THEN amount_bnb ELSE 0 END) - SUM(CASE WHEN action='buy' AND status='success' THEN amount_bnb ELSE 0 END)) as total_pnl_bnb,
-                SUM(CASE WHEN pnl_bnb > 0 THEN pnl_bnb ELSE 0 END) as profit_bnb,
-                SUM(CASE WHEN pnl_bnb < 0 THEN ABS(pnl_bnb) ELSE 0 END) as loss_bnb,
+                -- 已实现PnL：只累加 sell 记录的 pnl_bnb（含 failed_rug 的 -0.1，不含 phantom buy）
+                SUM(CASE WHEN action='sell' THEN CAST(pnl_bnb AS REAL) ELSE 0 END) as total_pnl_bnb,
+                SUM(CASE WHEN action='sell' AND CAST(pnl_bnb AS REAL) > 0 THEN CAST(pnl_bnb AS REAL) ELSE 0 END) as profit_bnb,
+                SUM(CASE WHEN action='sell' AND CAST(pnl_bnb AS REAL) < 0 THEN ABS(CAST(pnl_bnb AS REAL)) ELSE 0 END) as loss_bnb,
                 SUM(CASE WHEN action='sell' AND status='success' THEN amount_bnb ELSE 0 END) as total_sell_bnb,
                 SUM(CASE WHEN action='buy' AND status='success' THEN amount_bnb ELSE 0 END) as total_buy_bnb,
                 SUM(slippage_bnb) as total_slippage_bnb,

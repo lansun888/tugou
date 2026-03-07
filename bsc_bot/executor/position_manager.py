@@ -264,6 +264,33 @@ class PositionManager:
             dex_name=dex_name
         )
         
+        # ===== Fix for Four.meme: Fetch pair address immediately =====
+        if dex_name == 'four_meme' and not pair_address:
+            try:
+                PANCAKE_FACTORY = "0xcA143Ce32Fe78f1f7019d7d551a6402fC5350c73"
+                WBNB = "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c"
+                
+                factory = self.executor.w3.eth.contract(
+                    address=PANCAKE_FACTORY,
+                    abi=PANCAKESWAP_V2_FACTORY_ABI
+                )
+                fetched_pair = await factory.functions.getPair(
+                    token_address, WBNB
+                ).call()
+                
+                if fetched_pair == '0x' + '0'*40:
+                    # Retry once after 2s
+                    await asyncio.sleep(2)
+                    fetched_pair = await factory.functions.getPair(
+                        token_address, WBNB
+                    ).call()
+                
+                if fetched_pair and fetched_pair != '0x' + '0'*40:
+                    logger.info(f"[AddPosition] Four.meme pair found: {fetched_pair}")
+                    pos.pair_address = fetched_pair
+            except Exception as e:
+                logger.warning(f"[AddPosition] Failed to fetch pair for {token_name}: {e}")
+        
         if dex_data:
             pos.volume_24h = dex_data.get('volume_24h', 0.0)
             pos.price_change_5m = dex_data.get('price_change_5m', 0.0)
@@ -464,85 +491,195 @@ class PositionManager:
                 logger.error(f"监控循环异常: {e}", exc_info=True)
                 await asyncio.sleep(5)
 
-    async def _process_single_token(self, token_addr: str, all_prices: dict):
+    async def _process_single_token(self, token_address, dex_data=None):
         """处理单个代币的价格更新和策略检查（并行安全版）"""
-        pos = self.positions.get(token_addr)
+        pos = self.positions.get(token_address)
         if not pos or pos.status in ("sold", "closed"):
             return
 
         start_time = time.time()
-        
-        pair_data = all_prices.get(token_addr.lower()) if all_prices else None
 
-        price_bnb = 0.0
+        price = None
+        price_source = None
         liquidity_bnb = 0.0
-        source = "failed"
 
-        if pair_data:
-            price_bnb = pair_data.get('price_bnb', 0.0)
-            liquidity_bnb = pair_data.get('liquidity_bnb', 0.0)
-            pos.volume_24h = pair_data.get('volume_24h', 0.0)
-            pos.price_change_5m = pair_data.get('price_change_5m', 0.0)
-            pos.market_cap = pair_data.get('market_cap', 0.0)
-            pos.txns_5m_buys = pair_data.get('txns_5m_buys', 0)
-            pos.txns_5m_sells = pair_data.get('txns_5m_sells', 0)
-            pos.source = "dexscreener"
-            source = "dexscreener"
-        else:
-            # four_meme: bonding curve，不走 PancakeSwap，用 DexScreener 单次查询
-            if pos.dex_name == "four_meme":
-                try:
-                    price_info, _ = await self._get_four_meme_price_onchain(token_addr)
-                    if price_info and price_info.get("price_bnb", 0) > 0:
-                        price_bnb = price_info["price_bnb"]
-                        liquidity_bnb = price_info.get("liquidity_bnb", 0.0)
-                        source = "dexscreener_single"
-                except Exception as e:
-                    logger.debug(f"[four_meme] 价格查询失败 {token_addr}: {e}")
-            else:
-                try:
-                    price_info, err = await self._get_price_onchain(token_addr)
-                    if price_info:
-                        price_bnb = price_info.get('price_bnb', 0.0)
-                        liquidity_bnb = price_info.get('liquidity_bnb', 0.0)
-                        source = "on_chain"
-                    elif err == "network":
-                        logger.warning(f"{pos.token_name}: 链上查询失败(网络)，跳过")
-                        pos.fetch_fail_count += 1
-                        return
-                    elif err == "onchain_empty":
-                        price_bnb = 0.0
-                        liquidity_bnb = 0.0
-                        source = "on_chain_empty"
-                except Exception as e:
-                    logger.warning(f"链上价格回退异常 {token_addr}: {e}")
+        # ===== Four.meme代币：bonding curve链上价格 =====
+        if pos.dex_name == 'four_meme':
+            price_info, _ = await self._get_four_meme_price_onchain(token_address)
+            if price_info:
+                price = price_info.get('price_bnb')
+                liquidity_bnb = price_info.get('liquidity_bnb', 0.0)
+                price_source = price_info.get('source', 'four_meme_onchain')
+
+            if not price or price <= 0:
+                # 使用历史价格（最多600秒内有效）
+                STALE_PRICE_MAX_AGE = 600
+                last_price = pos.current_price
+                age = time.time() - pos.last_update_time if pos.last_update_time > 0 else float('inf')
+                if last_price > 0 and age < STALE_PRICE_MAX_AGE:
+                    logger.debug(f"{pos.token_name}: 使用历史价格 {last_price:.2e} BNB (陈旧 {age:.0f}s)")
+                    await self._check_strategies(pos, last_price, pos.liquidity_bnb)
+                else:
                     pos.fetch_fail_count += 1
-                    return
+                    logger.debug(f"{pos.token_name}: 价格获取失败且无可用历史价格，跳过")
+                return
+
+        # ===== 普通代币：优先DexScreener，失败降级链上 =====
+        else:
+            # 先用批量查询结果
+            if dex_data and dex_data.get(token_address.lower()):
+                pair_data = dex_data.get(token_address.lower())
+                price = pair_data.get('price_bnb')
+                liquidity_bnb = pair_data.get('liquidity_bnb', 0.0)
+                # Update other stats
+                pos.volume_24h = pair_data.get('volume_24h', 0.0)
+                pos.price_change_5m = pair_data.get('price_change_5m', 0.0)
+                pos.market_cap = pair_data.get('market_cap', 0.0)
+                pos.txns_5m_buys = pair_data.get('txns_5m_buys', 0)
+                pos.txns_5m_sells = pair_data.get('txns_5m_sells', 0)
+                price_source = 'dexscreener'
+            
+            # DexScreener没有数据，降级到链上（PancakeSwap V2 pair reserves）
+            if price is None:
+                price = await self._get_price_from_reserves(
+                    token_address, pos.pair_address
+                )
+                price_source = 'onchain_fallback'
+
+            if price is None:
+                logger.warning(f"{pos.token_name}: 价格获取失败，跳过")
+                pos.fetch_fail_count += 1
+                return
 
         pos.fetch_fail_count = 0
-
-        # 价格为 0：优先使用 Position 上次成功获取的价格（最多容忍 10 分钟陈旧）
-        STALE_PRICE_MAX_AGE = 600  # 秒
-        if price_bnb <= 0:
-            last_price = pos.current_price
-            last_update = pos.last_update_time
-            age = time.time() - last_update if last_update > 0 else float('inf')
-            if last_price > 0 and age < STALE_PRICE_MAX_AGE:
-                logger.debug(
-                    f"{pos.token_name}: 使用历史价格 {last_price:.2e} BNB (陈旧 {age:.0f}s)，仅做策略判断"
-                )
-                # 仅跑策略，不刷新 last_update_time（避免把陈旧时钟重置为 now）
-                await self._check_strategies(pos, last_price, liquidity_bnb)
-            else:
-                logger.debug(f"{pos.token_name}: 价格获取失败且无可用历史价格，跳过本轮策略判断")
-            return
-
-        await self._update_position_price(pos, price_bnb, source, liquidity_bnb)
-        await self._check_strategies(pos, price_bnb, liquidity_bnb)
+        logger.debug(f"{pos.token_name}: 价格={price:.4e} 来源={price_source}")
+        await self._update_position_price(pos, price, price_source, liquidity_bnb)
+        await self._check_strategies(pos, price, liquidity_bnb)
         
         elapsed = (time.time() - start_time) * 1000
         if elapsed > 500:
-             logger.debug(f"🔄 [Poll] {pos.token_name} 价格更新完成 | 耗时: {elapsed:.2f}ms | 来源: {source}")
+             logger.debug(f"🔄 [Poll] {pos.token_name} 价格更新完成 | 耗时: {elapsed:.2f}ms | 来源: {price_source}")
+
+    async def _ensure_pair_address(self, pos):
+        """Ensure pair address exists for Four.meme tokens"""
+        if pos.pair_address:
+            return
+            
+        try:
+            PANCAKE_FACTORY = "0xcA143Ce32Fe78f1f7019d7d551a6402fC5350c73"
+            WBNB = "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c"
+            FACTORY_ABI = [{"constant":True,"inputs":[{"internalType":"address","name":"","type":"address"},{"internalType":"address","name":"","type":"address"}],"name":"getPair","outputs":[{"internalType":"address","name":"","type":"address"}],"payable":False,"stateMutability":"view","type":"function"}]
+            
+            factory = self.executor.w3.eth.contract(
+                address=PANCAKE_FACTORY,
+                abi=FACTORY_ABI
+            )
+            pair_address = await factory.functions.getPair(
+                pos.token_address, WBNB
+            ).call()
+            
+            if pair_address and pair_address != '0x' + '0'*40:
+                logger.info(f"Found missing pair address for {pos.token_name}: {pair_address}")
+                pos.pair_address = pair_address
+                # Save to DB
+                await self._save_position(pos)
+        except Exception as e:
+            logger.warning(f"Failed to fetch pair address for {pos.token_name}: {e}")
+
+    # decimals缓存，避免重复查询
+    _decimals_cache = {}
+
+    async def _get_token_decimals(self, token_address: str) -> int:
+        if token_address in self._decimals_cache:
+            return self._decimals_cache[token_address]
+        
+        try:
+            ERC20_ABI_DECIMALS = [{
+                "name": "decimals",
+                "outputs": [{"name": "", "type": "uint8"}],
+                "stateMutability": "view",
+                "type": "function"
+            }]
+            contract = self.executor.w3.eth.contract(
+                address=Web3.to_checksum_address(token_address),
+                abi=ERC20_ABI_DECIMALS
+            )
+            decimals = await contract.functions.decimals().call()
+            self._decimals_cache[token_address] = decimals
+            return decimals
+        except:
+            return 18  # 默认18位
+
+    async def _get_price_from_reserves(
+        self, token_address: str, pair_address: str
+    ) -> float | None:
+        
+        try:
+            # pair地址无效直接返回
+            if not pair_address:
+                logger.debug(f"pair_address为空: {token_address[:8]}")
+                return None
+            
+            if pair_address == '0x' + '0' * 40:
+                logger.debug(f"pair_address是零地址: {token_address[:8]}")
+                return None
+            
+            PAIR_ABI = [
+                {
+                    "name": "getReserves",
+                    "outputs": [
+                        {"name": "reserve0", "type": "uint112"},
+                        {"name": "reserve1", "type": "uint112"},
+                        {"name": "blockTimestampLast", "type": "uint32"}
+                    ],
+                    "stateMutability": "view",
+                    "type": "function"
+                },
+                {
+                    "name": "token0",
+                    "outputs": [{"name": "", "type": "address"}],
+                    "stateMutability": "view",
+                    "type": "function"
+                }
+            ]
+            
+            WBNB = "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c"
+            
+            pair = self.executor.w3.eth.contract(
+                address=Web3.to_checksum_address(pair_address),
+                abi=PAIR_ABI
+            )
+            
+            async with asyncio.timeout(3):
+                reserves, token0 = await asyncio.gather(
+                    pair.functions.getReserves().call(),
+                    pair.functions.token0().call()
+                )
+            
+            reserve0, reserve1, _ = reserves
+            
+            if token0.lower() == WBNB.lower():
+                bnb_reserve = reserve0
+                token_reserve = reserve1
+            else:
+                bnb_reserve = reserve1
+                token_reserve = reserve0
+            
+            if token_reserve == 0 or bnb_reserve == 0:
+                return None
+            
+            # 获取decimals（带缓存）
+            decimals = await self._get_token_decimals(token_address)
+            
+            price = (bnb_reserve / 10**18) / (token_reserve / 10**decimals)
+            return price
+            
+        except asyncio.TimeoutError:
+            logger.debug(f"getReserves超时: {token_address[:8]}")
+            return None
+        except Exception as e:
+            logger.debug(f"getReserves异常: {token_address[:8]}: {e}")
+            return None
 
     async def _update_position_price(self, pos, price_bnb, source, liquidity_bnb):
         """Helper to update position price"""
@@ -760,11 +897,67 @@ class PositionManager:
 
     async def _get_four_meme_price_onchain(self, token_address: str) -> Tuple[Optional[dict], str]:
         """
-        four.meme bonding curve 价格查询。
-        factory 的链上函数选择器未知，直接用 DexScreener 单次查询。
-        对已毕业代币，_get_price_onchain（PancakeSwap pair）会先于本函数命中，
-        故本函数只处理仍在 bonding curve 阶段的代币。
+        four.meme bonding curve 价格查询（链上直接计算）。
+
+        通过 factory.0xe684626b(address) 读取13槽位结构体：
+          slot10 = k_norm（常量积 k/1e18）
+          slot11 = virtual_token_reserve（虚拟代币储备，随买入减少）
+          slot8  = bnb_raised（已募集BNB，Wei单位）
+
+        价格公式（constant product AMM）：
+          virtual_bnb = k_norm * 1e18 / virtual_token
+          price_bnb   = virtual_bnb / virtual_token = k_norm * 1e18 / virtual_token^2
+
+        已链上验证 (2026-03-07):
+          零状态初始价 ≈ 5.75e-9 BNB/token（市值约5.75 BNB，符合four.meme launch定价）
         """
+        FACTORY = '0x5c952063c7fc8610FFDB798152D69F0B9550762b'
+        SEL = 'e684626b'  # tokenInfo(address) → 13-slot struct（链上探测确认）
+
+        try:
+            w3 = self.executor.w3
+            token_padded = '000000000000000000000000' + token_address[2:].lower()
+            call_data = bytes.fromhex(SEL + token_padded)
+            factory_addr = AsyncWeb3.to_checksum_address(FACTORY)
+
+            result = await w3.eth.call({'to': factory_addr, 'data': call_data})
+
+            if not result or len(result) < 12 * 32:
+                raise ValueError("返回数据不足13槽")
+
+            raw = result.hex()
+            slot10 = int(raw[10 * 64:(10 + 1) * 64], 16)  # k_norm = k/1e18
+            slot11 = int(raw[11 * 64:(11 + 1) * 64], 16)  # virtual_token_reserve
+            slot8  = int(raw[8  * 64:(8  + 1) * 64], 16)  # bnb_raised (Wei)
+
+            if slot11 == 0:
+                return None, "onchain_empty"
+
+            # price_bnb = k_norm * 1e18 / virtual_token^2
+            price_bnb = (slot10 * 10 ** 18) / (slot11 ** 2)
+
+            # actual BNB in bonding curve for liquidity estimate
+            bnb_raised = slot8 / 10 ** 18
+            # liquidity_bnb: at minimum the bnb raised; for bonding curve use virtual_bnb as proxy
+            virtual_bnb = (slot10 * 10 ** 18 / slot11) / 10 ** 18  # virtual BNB in BNB units
+            liquidity_bnb = max(bnb_raised, virtual_bnb) * 2
+
+            if price_bnb > 0:
+                logger.debug(
+                    f"[four_meme] 链上价格 {token_address[:10]}: "
+                    f"price={price_bnb:.4e} BNB, bnb_raised={bnb_raised:.4f}, "
+                    f"virtual_bnb={virtual_bnb:.4f}"
+                )
+                return {
+                    "price_bnb": price_bnb,
+                    "liquidity_bnb": liquidity_bnb,
+                    "source": "four_meme_onchain",
+                }, "none"
+
+        except Exception as e:
+            logger.debug(f"[four_meme] 链上价格查询失败 {token_address[:10]}: {e}")
+
+        # Fallback: DexScreener（代币已上线 DEX 时）
         try:
             from bsc_bot.utils.dexscreener_client import get_token_data
             dex_data = await get_token_data(token_address)
@@ -772,9 +965,11 @@ class PositionManager:
                 return {
                     "price_bnb": dex_data["price_bnb"],
                     "liquidity_bnb": dex_data.get("liquidity_bnb", 0.0),
+                    "source": "dexscreener",
                 }, "none"
         except Exception as e:
-            logger.debug(f"[four_meme] DexScreener查询异常 {token_address}: {e}")
+            logger.debug(f"[four_meme] DexScreener查询异常 {token_address[:10]}: {e}")
+
         return None, "onchain_empty"
 
     async def _get_tg_session(self) -> aiohttp.ClientSession:

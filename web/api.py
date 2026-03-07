@@ -46,6 +46,7 @@ class SellRequest(BaseModel):
 class PositionParamsUpdate(BaseModel):
     stop_loss_price: Optional[float] = None
     target_price: Optional[float] = None
+    buy_price_bnb: Optional[float] = None
 
 async def verify_api_key(x_api_key: str = Header(...)):
     expected_key = "tugou_secret_key"
@@ -355,6 +356,14 @@ async def update_position_params(token_address: str, update: PositionParamsUpdat
         if update.target_price <= 0:
             raise HTTPException(status_code=400, detail="target_price must be > 0")
         pos.manual_target_price = update.target_price
+    if update.buy_price_bnb is not None:
+        if update.buy_price_bnb <= 0:
+            raise HTTPException(status_code=400, detail="buy_price_bnb must be > 0")
+        pos.buy_price_bnb = update.buy_price_bnb
+        # 同步更新 highest_price（防止 highest < buy）
+        if pos.highest_price < pos.buy_price_bnb:
+            pos.highest_price = pos.buy_price_bnb
+        await bot.position_manager._save_position(pos)
     return {"status": "ok", "stop_loss_price": getattr(pos, 'manual_stop_loss', None), "target_price": getattr(pos, 'manual_target_price', None)}
 
 @app.get("/api/simulation/stats", dependencies=[Depends(verify_api_key)])

@@ -217,6 +217,16 @@ class TradingBot:
 
             four_meme_cfg = self.config.get("four_meme", {})
 
+            # ── four_meme 总开关检查 ──
+            if is_four_meme and not four_meme_cfg.get("enabled", True):
+                logger.debug(f"[Four.meme] 功能已关闭，跳过: {token_symbol}")
+                return
+
+            # ── four_meme 近毕业监控：发现即加入观察列表 ──
+            if is_four_meme and token_address not in self._graduation_watched:
+                self._graduation_watched[token_address] = asyncio.get_event_loop().time()
+                logger.debug(f"[near_grad] 加入监控: {token_address[:10]}")
+
             # ── 阶段1：初始状态获取 (four_meme 跳过，bonding curve 无 pair 地址) ──
             t1 = time.perf_counter()
             if is_four_meme:
@@ -333,6 +343,19 @@ class TradingBot:
             if decision in ["buy", "half_buy"]:
                 t6 = time.perf_counter()
 
+                # ── 买入前风控检查（必须在 buy_token 之前，防止 phantom buy）──
+                pm = self.position_manager
+                max_positions = self.config.get("position_management", {}).get("max_concurrent_positions", 5)
+                active_count = sum(1 for p in pm.positions.values() if p.status in ("active", "partially_sold"))
+                if active_count >= max_positions:
+                    logger.warning(f"已达最大持仓数 ({active_count}/{max_positions})，跳过买入: {token_symbol}")
+                    return
+                if not pm._check_daily_risk_allow_buy():
+                    logger.warning(f"每日风控拦截，跳过买入: {token_symbol}")
+                    return
+
+                # four_meme bonding curve 阶段没有 PancakeSwap pair，买入直接调工厂，无需 pair 地址
+
                 # four_meme 使用专属 buy_amount，换算成 multiplier
                 if is_four_meme:
                     base_amount = self.config.get("trading", {}).get("buy_amount", 0.1)
@@ -447,6 +470,138 @@ class TradingBot:
             
         logger.info("Bot stopped successfully")
 
+    # ─── Four.meme 近毕业监控（pre-graduation buy）────────────────────────────
+    _near_graduation_cache: set = set()   # 防止重复触发买入
+    _graduation_watched: dict = {}        # token_address -> first_seen_time
+
+    async def _get_four_meme_raise_progress(self, token_address: str) -> dict | None:
+        """
+        查询 four.meme bonding curve 募资进度。
+        利用已知的 0xe684626b(address) 工厂调用：
+          slot5 = graduation BNB target (Wei)
+          slot8 = BNB raised so far (Wei)
+        """
+        FACTORY = '0x5c952063c7fc8610FFDB798152D69F0B9550762b'
+        SEL = 'e684626b'
+        try:
+            from web3 import AsyncWeb3
+            w3 = self.executor.w3
+            token_padded = '000000000000000000000000' + token_address[2:].lower()
+            result = await w3.eth.call({
+                'to': AsyncWeb3.to_checksum_address(FACTORY),
+                'data': bytes.fromhex(SEL + token_padded),
+            })
+            if not result or len(result) < 9 * 32:
+                return None
+            raw = result.hex()
+            slot5 = int(raw[5 * 64:6 * 64], 16)   # graduation target (Wei)
+            slot8 = int(raw[8 * 64:9 * 64], 16)    # BNB raised (Wei)
+            if slot5 == 0:
+                return None
+            raised = slot8 / 1e18
+            target = slot5 / 1e18
+            return {'raised': raised, 'target': target, 'pct': raised / target * 100}
+        except Exception as e:
+            logger.debug(f"[near_grad] 进度查询失败 {token_address[:10]}: {e}")
+            return None
+
+    async def _handle_near_graduation(self, token_address: str, progress: dict):
+        """处理即将毕业的代币：安全检测 → 买入。"""
+        if token_address in self._near_graduation_cache:
+            return
+        self._near_graduation_cache.add(token_address)
+
+        logger.info(f"⚡ [near_grad] 即将毕业 {token_address[:10]} "
+                    f"进度={progress['pct']:.1f}% ({progress['raised']:.3f}/{progress['target']:.1f} BNB)")
+
+        # 如已持仓则跳过
+        if token_address in self.position_manager.positions:
+            logger.debug(f"[near_grad] 已持仓，跳过: {token_address[:10]}")
+            return
+
+        # 安全检测（尽量用缓存）
+        analysis = getattr(self.security_checker, '_cache', {}).get(token_address)
+        if not analysis:
+            try:
+                analysis = await self.security_checker.analyze(
+                    token_address, platform='four_meme'
+                )
+            except Exception:
+                analysis = None
+
+        if not analysis or not analysis.get('passed', False):
+            logger.info(f"[near_grad] 安全检测未通过，跳过: {token_address[:10]}")
+            self._near_graduation_cache.discard(token_address)
+            return
+
+        four_meme_cfg = self.config.get('four_meme', {})
+        near_grad_cfg = four_meme_cfg.get('near_graduation', {})
+        buy_amount = float(near_grad_cfg.get('buy_amount', 0.03))
+
+        result = await self.executor.buy_token(
+            token_address,
+            token_symbol=analysis.get('token_name', token_address[:8]),
+            amount_bnb=buy_amount,
+            dex_name='four_meme'
+        )
+
+        if result.get('status') == 'success':
+            logger.success(f"[near_grad] 预买入成功: {token_address[:10]} {buy_amount} BNB")
+        else:
+            logger.warning(f"[near_grad] 预买入失败: {result}")
+            self._near_graduation_cache.discard(token_address)
+
+    async def monitor_near_graduation(self):
+        """
+        轮询所有已发现的 four.meme 代币，当募资进度 >= trigger_pct 时触发预买入。
+        每 poll_interval 秒查询一次，使用 _graduation_watched 追踪已知代币。
+        """
+        four_meme_cfg = self.config.get('four_meme', {})
+        near_grad_cfg = four_meme_cfg.get('near_graduation', {})
+        if not near_grad_cfg.get('enabled', False):
+            logger.info("[near_grad] 近毕业监控未启用（four_meme.near_graduation.enabled=false）")
+            return
+
+        trigger_pct    = float(near_grad_cfg.get('trigger_pct', 80))
+        poll_interval  = float(near_grad_cfg.get('poll_interval', 15))
+        max_wait_min   = float(near_grad_cfg.get('max_wait_minutes', 10))
+        logger.info(f"[near_grad] 近毕业监控启动: trigger={trigger_pct}% poll={poll_interval}s")
+
+        while self.running:
+            try:
+                now = asyncio.get_event_loop().time()
+                # 从 pairs DB 获取近期 four_meme 代币（last 30 min）
+                tokens_to_watch = list(self._graduation_watched.keys())
+
+                for token_address in tokens_to_watch:
+                    first_seen = self._graduation_watched[token_address]
+                    # 超过 max_wait_min 未毕业 → 移除监控
+                    if (now - first_seen) / 60 > max_wait_min:
+                        del self._graduation_watched[token_address]
+                        self._near_graduation_cache.discard(token_address)
+                        logger.debug(f"[near_grad] 超时移除: {token_address[:10]}")
+                        continue
+
+                    if token_address in self._near_graduation_cache:
+                        continue  # 已触发过，跳过
+
+                    progress = await self._get_four_meme_raise_progress(token_address)
+                    if not progress:
+                        continue
+
+                    logger.debug(f"[near_grad] {token_address[:10]} "
+                                 f"{progress['pct']:.1f}% ({progress['raised']:.3f} BNB)")
+
+                    if progress['pct'] >= trigger_pct:
+                        asyncio.create_task(
+                            self._handle_near_graduation(token_address, progress)
+                        )
+
+            except Exception as e:
+                logger.error(f"[near_grad] 监控循环异常: {e}")
+
+            await asyncio.sleep(poll_interval)
+
     async def run_background(self):
         """Run bot in background tasks (for API)"""
         if self.running:
@@ -456,13 +611,17 @@ class TradingBot:
         self.running = True
         await self.setup()
 
+        four_meme_near_grad = self.config.get('four_meme', {}).get('near_graduation', {})
+
         # Create tasks
         self.tasks = [
             asyncio.create_task(self.listener.run()),
             asyncio.create_task(self.position_manager.start_monitoring()),
             asyncio.create_task(self.process_pairs()),
-            asyncio.create_task(self.run_scheduler())
+            asyncio.create_task(self.run_scheduler()),
         ]
+        if four_meme_near_grad.get('enabled', False):
+            self.tasks.append(asyncio.create_task(self.monitor_near_graduation()))
         logger.success("Bot background tasks started")
 
     async def run(self):
