@@ -799,7 +799,10 @@ class SecurityChecker:
                 is_hp, b_tax, s_tax, sim_reason = await self.local_simulator.simulate_trade(token_address, pair_address)
                 dur4 = (time.perf_counter() - t4) * 1000
                 out["simulation"] = {"is_honeypot": is_hp, "buy_tax": b_tax, "sell_tax": s_tax, "reason": sim_reason}
-                if is_hp:
+                if sim_reason == "slot_not_found":
+                    # slot未找到不等于貔貅，降级到主流程的honeypot.is检测，不拒绝不加黑名单
+                    logger.warning(f"[local_checks] slot未找到，跳过simulate判定: {token_address[:10]}")
+                elif is_hp:
                     out["reject"] = True
                     out["reason"] = f"本地模拟交易失败: {sim_reason}"
                     if code_hash:
@@ -905,6 +908,34 @@ class SecurityChecker:
 
         result["raw_data"]["honeypot"] = honeypot_res
         result["raw_data"]["goplus"] = goplus_res
+
+        # ── 2b. simulationSuccess=False → 无法验证卖出，硬拒绝 ──
+        if honeypot_res and not honeypot_res.get("simulationSuccess", True):
+            score = 0
+            risk_items.append({"desc": "Honeypot.is 模拟卖出失败（无法验证可卖出性）", "score": -100})
+            logger.warning(f"[four_meme] simulationSuccess=False 拒绝: {token_address[:10]}")
+            result["final_score"] = 0
+            result["decision"] = "reject"
+            result["risk_items"] = risk_items
+            result["analysis_time"] = time.time() - start_time
+            return result
+
+        # ── 2c. 两个API均无响应（新代币未被索引）→ 扣20分 ──
+        if not honeypot_res and not goplus_res:
+            score -= 20
+            risk_items.append({"desc": "Honeypot.is/GoPlus 均无响应，代币未被API索引", "score": -20})
+            logger.warning(f"[four_meme] 两个貔貅API均无响应，降低评分20分: {token_address[:10]}")
+
+        # ── 2d. GoPlus cannot_sell_all → 硬拒绝 ──
+        if goplus_res and goplus_res.get("cannot_sell_all") == "1":
+            score = 0
+            risk_items.append({"desc": "GoPlus: 无法卖出全部代币（貔貅特征）", "score": -100})
+            logger.warning(f"[four_meme] GoPlus cannot_sell_all 拒绝: {token_address[:10]}")
+            result["final_score"] = 0
+            result["decision"] = "reject"
+            result["risk_items"] = risk_items
+            result["analysis_time"] = time.time() - start_time
+            return result
 
         # ── 3. 税率检测（GoPlus 或 Honeypot.is）──
         try:
@@ -1159,19 +1190,80 @@ class SecurityChecker:
                 score -= 15
                 risk_items.append({"desc": "存在黑名单功能", "score": -15})
 
+            # creator持有99%+代币 → 无法分发给真实买家 / 合约限制卖出，硬拒绝
+            creator_pct = float(goplus_data.get("creator_percent", 0) or 0)
+            if creator_pct >= 0.99:
+                score = 0
+                risk_items.append({"desc": f"GoPlus: creator持有{creator_pct*100:.0f}%代币（貔貅/Rug特征）", "score": -100})
+                logger.warning(f"creator_percent={creator_pct:.2f} 硬拒绝: {token_address[:10]}")
+                return self._finalize_result(result, score, risk_items, bonus_items, start_time)
+
+            # 唯一持仓是LP合约(100%) → 代币无法被真实钱包持有，硬拒绝
+            holder_count = int(goplus_data.get("holder_count", 99) or 99)
+            holders = goplus_data.get("holders", [])
+            if holder_count <= 2 and holders:
+                non_lp_real_holders = [
+                    h for h in holders
+                    if h.get("is_contract") == 0
+                    or float(h.get("percent", 0)) < 0.8
+                ]
+                if not non_lp_real_holders:
+                    score = 0
+                    risk_items.append({"desc": f"GoPlus: 无真实钱包持仓({holder_count}个holder全为合约/LP)，貔貅特征", "score": -100})
+                    logger.warning(f"holder_count={holder_count} 全为LP合约，硬拒绝: {token_address[:10]}")
+                    return self._finalize_result(result, score, risk_items, bonus_items, start_time)
+
+            # 无法卖出 / 交易暂停 / 冷却 → 直接硬拒绝
+            if goplus_data.get("cannot_sell_all") == "1":
+                score = 0
+                risk_items.append({"desc": "GoPlus: 无法卖出全部代币（貔貅）", "score": -100})
+                return self._finalize_result(result, score, risk_items, bonus_items, start_time)
+
+            if goplus_data.get("transfer_pausable") == "1":
+                score = 0
+                risk_items.append({"desc": "GoPlus: 转账可被暂停（貔貅风险）", "score": -100})
+                return self._finalize_result(result, score, risk_items, bonus_items, start_time)
+
+            if goplus_data.get("trading_cooldown") == "1":
+                score -= 25
+                risk_items.append({"desc": "GoPlus: 存在交易冷却限制", "score": -25})
+
+            if goplus_data.get("personal_slippage_modifiable") == "1":
+                score -= 20
+                risk_items.append({"desc": "GoPlus: 可针对个人地址修改滑点（貔貅特征）", "score": -20})
+
         # 2. Honeypot.is 检测
         if honeypot_data:
             if not honeypot_data.get("simulationSuccess", False):
                 score = 0
                 risk_items.append({"desc": "Honeypot.is 模拟交易失败", "score": -100})
-            
+
+            # 已知貔貅模板特征：decimals=8 + totalSupply=None（Honeypot.is读不出）
+            # BDAG/PIPPKIN 等同一工厂部署的合约，buyGas=154480 sellGas=107848
+            hp_token = honeypot_data.get("token", {}) or {}
+            hp_sim = honeypot_data.get("simulationResult", {}) or {}
+            hp_decimals = hp_token.get("decimals")
+            hp_total_supply = hp_token.get("totalSupply")
+            hp_buy_gas = str(hp_sim.get("buyGas", ""))
+            hp_sell_gas = str(hp_sim.get("sellGas", ""))
+            KNOWN_HP_BUY_GAS = {"154480"}
+            KNOWN_HP_SELL_GAS = {"107848"}
+            if (hp_decimals == 8
+                    and hp_total_supply is None
+                    and hp_buy_gas in KNOWN_HP_BUY_GAS
+                    and hp_sell_gas in KNOWN_HP_SELL_GAS):
+                score = 0
+                risk_items.append({"desc": f"Honeypot.is: 匹配已知貔貅合约模板(decimals=8,totalSupply=None,gas={hp_buy_gas}/{hp_sell_gas})", "score": -100})
+                logger.warning(f"已知貔貅模板匹配，硬拒绝: {token_address[:10]}")
+                return self._finalize_result(result, score, risk_items, bonus_items, start_time)
+
             # 再次检查税率 (双重确认)
-            hp_buy_tax = float(honeypot_data.get("simulationResult", {}).get("buyTax", 0))
-            hp_sell_tax = float(honeypot_data.get("simulationResult", {}).get("sellTax", 0))
-            
+            hp_buy_tax = float(hp_sim.get("buyTax", 0))
+            hp_sell_tax = float(hp_sim.get("sellTax", 0))
+
             if hp_buy_tax > 25 or hp_sell_tax > 25:
                 # 避免重复扣分，取最大值
-                pass 
+                pass
 
         # --- 维度二：合约字节码与相似度 ---
         
@@ -1312,9 +1404,6 @@ class SecurityChecker:
                 return self._finalize_result(result, score, risk_items, bonus_items, start_time)
 
         # --- 汇总与决策 ---
-        # 更新 max score logic if needed, but finalize uses raw score.
-        # User said "Max 150". My logic caps at 100 in finalize. Need to change finalize too.
-        
         return self._finalize_result(result, score, risk_items, bonus_items, start_time)
 
     async def close(self):

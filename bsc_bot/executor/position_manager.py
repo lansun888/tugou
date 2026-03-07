@@ -35,6 +35,7 @@ class Position:
     fetch_fail_count: int = 0 # Consecutive price fetch failures
     last_update_time: float = 0.0 # Timestamp of last price update
     dex_name: str = None # DEX Name (pancakeswap_v2, four_meme, etc.)
+    security_score: int = 0  # 安全评分（买入时记录）
     
     # DexScreener Data
     volume_24h: float = 0.0
@@ -146,15 +147,18 @@ class PositionManager:
                     txns_5m_buys INTEGER DEFAULT 0,
                     txns_5m_sells INTEGER DEFAULT 0,
                     source TEXT DEFAULT 'init',
-                    initial_liquidity_bnb REAL DEFAULT 0.0
+                    initial_liquidity_bnb REAL DEFAULT 0.0,
+                    security_score INTEGER DEFAULT 0
                 )
             """)
-            
+
             # Migration check
             try:
                 cursor = await db.execute(f"PRAGMA table_info({self.positions_table})")
                 columns = [row[1] for row in await cursor.fetchall()]
-                
+
+                if "security_score" not in columns:
+                    await db.execute(f"ALTER TABLE {self.positions_table} ADD COLUMN security_score INTEGER DEFAULT 0")
                 if "volume_24h" not in columns:
                     await db.execute(f"ALTER TABLE {self.positions_table} ADD COLUMN volume_24h REAL DEFAULT 0.0")
                 if "price_change_5m" not in columns:
@@ -240,7 +244,7 @@ class PositionManager:
         except Exception as e:
             logger.error(f"恢复仓位失败: {e}")
 
-    async def add_position(self, token_address, token_name, buy_price, buy_amount_bnb, token_amount, buy_gas_price=0, dex_data=None, pair_address="", initial_liquidity_bnb=0.0, dex_name=None):
+    async def add_position(self, token_address, token_name, buy_price, buy_amount_bnb, token_amount, buy_gas_price=0, dex_data=None, pair_address="", initial_liquidity_bnb=0.0, dex_name=None, security_score=0):
         """添加新仓位"""
         # 每日风控检查
         if not self._check_daily_risk_allow_buy():
@@ -261,7 +265,8 @@ class PositionManager:
             pair_address=pair_address,
             initial_liquidity_bnb=initial_liquidity_bnb,
             liquidity_bnb=initial_liquidity_bnb,
-            dex_name=dex_name
+            dex_name=dex_name,
+            security_score=security_score
         )
         
         # ===== Fix for Four.meme: Fetch pair address immediately =====
@@ -318,12 +323,12 @@ class PositionManager:
             async with aiosqlite.connect(self.db_path) as db:
                 await db.execute(f"""
                     INSERT OR REPLACE INTO {self.positions_table}
-                    (token_address, token_name, buy_price_bnb, buy_amount_bnb, token_amount, buy_time, highest_price, sold_portions, status, buy_gas_price, pair_address, current_price, pnl_percentage, initial_liquidity_bnb, dex_name)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (token_address, token_name, buy_price_bnb, buy_amount_bnb, token_amount, buy_time, highest_price, sold_portions, status, buy_gas_price, pair_address, current_price, pnl_percentage, initial_liquidity_bnb, dex_name, security_score)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     pos.token_address, pos.token_name, pos.buy_price_bnb, pos.buy_amount_bnb,
                     pos.token_amount, pos.buy_time, pos.highest_price, json.dumps(pos.sold_portions), pos.status, pos.buy_gas_price,
-                    pos.pair_address, pos.current_price, pos.pnl_percentage, pos.initial_liquidity_bnb, pos.dex_name
+                    pos.pair_address, pos.current_price, pos.pnl_percentage, pos.initial_liquidity_bnb, pos.dex_name, pos.security_score
                 ))
                 await db.commit()
         except Exception as e:
@@ -1086,23 +1091,6 @@ class PositionManager:
         if is_emergency:
             logger.warning(f"🚨 {pos.token_name} 触发紧急/手动卖出 ({reason})，跳过冷却检查")
         
-        # 用户要求：去掉5秒内已有卖出判断条件，允许连续卖出
-        # if not is_emergency:
-        #     try:
-        #         trades_table = self.executor.trades_table
-        #         async with aiosqlite.connect(self.db_path) as db:
-        #             # Only check for SUCCESSFUL or PENDING sells in the last 5s. 
-        #             # If the last one FAILED, we should allow retrying immediately.
-        #             cursor = await db.execute(
-        #                 f"SELECT COUNT(*) FROM {trades_table} WHERE token_address=? AND action='sell' AND status != 'failed' AND created_at > datetime('now', '-5 seconds')", 
-        #                 (pos.token_address,)
-        #             )
-        #             count = (await cursor.fetchone())[0]
-        #             if count > 0:
-        #                 logger.warning(f"{pos.token_name} 5秒内已有成功卖出 ({count}次)，跳过 (非紧急情况)")
-        #                 return False
-        #     except Exception as e:
-        #         logger.error(f"防重复检查错误: {e}")
 
         self.selling_tokens.add(pos.token_address)
         try:

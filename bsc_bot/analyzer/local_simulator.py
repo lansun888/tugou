@@ -257,8 +257,8 @@ class LocalSimulator:
                 return True, 0, 0, buy_err
 
             if balance_slot == -1 or allowance_slot == -1:
-                logger.info(f"    └─ [simulate] 总={_ms(t0)} → slot未找到，跳过卖出模拟")
-                return False, 0, 0, "Could not find storage slots for simulation"
+                logger.warning(f"    └─ [simulate] 总={_ms(t0)} → slot未找到，跳过simulate降级到honeypot.is")
+                return False, 0, 0, "slot_not_found"
 
             # ── Sell simulation ──
             t_sell = time.perf_counter()
@@ -307,5 +307,5 @@ class LocalSimulator:
             return False, 0, 0, "Simulation Passed"
 
         except Exception as e:
-            logger.error(f"Simulation error: {e}")
-            return False, 0, 0, f"Error: {e}"
+            logger.error(f"Simulation error (treating as honeypot): {e}")
+            return True, 0, 0, f"Simulation Error: {e}"

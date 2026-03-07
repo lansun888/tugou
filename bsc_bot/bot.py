@@ -207,7 +207,9 @@ class TradingBot:
             is_four_meme  = (dex_name == "four_meme")
             logger.info(
                 f"Processing new pair: {token_symbol} ({token_address}) on {dex_name} "
-                f"| liq={liquidity_bnb:.2f} BNB | queue_remaining={queue_size}"
+                f"| liq={liquidity_bnb:.2f} BNB | queue_remaining={queue_size}\n"
+                f"    ├─ GMGN:  https://gmgn.ai/bsc/token/{token_address}\n"
+                f"    └─ DEXS:  https://dexscreener.com/bsc/{token_address}"
             )
 
             # Check if paused
@@ -427,7 +429,8 @@ class TradingBot:
                         dex_data={},           # position_manager 监控会自动从 DexScreener 补全
                         pair_address=pair_address,
                         initial_liquidity_bnb=initial_state.get('liquidity_bnb', 0.0) if initial_state else 0.0,
-                        dex_name=dex_name
+                        dex_name=dex_name,
+                        security_score=score
                     )
                     dur8 = _ms(t8)
                     logger.info(f"⏱️ 8.仓位入库: {dur8:.0f}ms")
