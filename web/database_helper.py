@@ -9,7 +9,7 @@ class DatabaseHelper:
     def __init__(self, db_path="./data/bsc_bot.db"):
         self.db_path = db_path
 
-    async def get_trades(self, page=1, limit=20, type="all", table_name="trades", positions_table="positions"):
+    async def get_trades(self, page=1, limit=50, type="all", table_name="trades", positions_table="positions", time_range="all", token_search=""):
         offset = (page - 1) * limit
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
@@ -17,28 +17,72 @@ class DatabaseHelper:
                 cols = await cursor.fetchall()
                 columns = [col[1] for col in cols]
                 if not columns:
-                    return []
+                    return {"items": [], "total": 0, "page": page, "has_more": False}
 
             time_col = "timestamp" if "timestamp" in columns else "created_at" if "created_at" in columns else "time" if "time" in columns else "id"
-            query = f"SELECT * FROM {table_name}"
-            params = []
-            if type != "all":
-                query += " WHERE LOWER(action) = ?"
-                params.append(type.lower())
-            query += f" ORDER BY {time_col} DESC LIMIT ? OFFSET ?"
-            params.extend([limit, offset])
 
+            # 构建 WHERE 条件（服务端过滤）
+            conditions = []
+            filter_params = []
+
+            if type != "all":
+                conditions.append("LOWER(action) = ?")
+                filter_params.append(type.lower())
+
+            if time_range == "today":
+                conditions.append(f"date({time_col}) = date('now')")
+            elif time_range == "7d":
+                conditions.append(f"{time_col} >= datetime('now', '-7 days')")
+            elif time_range == "30d":
+                conditions.append(f"{time_col} >= datetime('now', '-30 days')")
+
+            if token_search and token_search.strip():
+                s = f"%{token_search.strip()}%"
+                search_cols = []
+                for col in ("token_name", "token_symbol", "token_address"):
+                    if col in columns:
+                        search_cols.append(f"{col} LIKE ?")
+                        filter_params.append(s)
+                if search_cols:
+                    conditions.append(f"({' OR '.join(search_cols)})")
+
+            where_sql = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+
+            # COUNT 查询（索引覆盖，极快）
+            async with db.execute(
+                f"SELECT COUNT(*) FROM {table_name} {where_sql}", filter_params
+            ) as count_cursor:
+                count_row = await count_cursor.fetchone()
+            total = count_row[0] if count_row else 0
+
+            trade_query = f"SELECT * FROM {table_name} {where_sql} ORDER BY {time_col} DESC LIMIT ? OFFSET ?"
+            params = filter_params + [limit, offset]
+
+            # 先执行分页查询，再按实际出现的 token_address 精准查 positions（避免全表扫描）
             position_name_map = {}
             sold_records_map = {}
             buy_price_map = {}
 
-            async with db.execute(f"PRAGMA table_info({positions_table})") as pos_cursor:
-                pos_cols = await pos_cursor.fetchall()
-                pos_columns = [col[1] for col in pos_cols]
+            async with db.execute(trade_query, params) as trade_cursor:
+                trade_rows = await trade_cursor.fetchall()
+
+            # 收集当页涉及的 token_address
+            page_token_addrs = list({
+                row["token_address"] for row in trade_rows
+                if row["token_address"]
+            })
+
+            if page_token_addrs:
+                async with db.execute(f"PRAGMA table_info({positions_table})") as pos_cursor:
+                    pos_columns = [col[1] for col in await pos_cursor.fetchall()]
+
                 if pos_columns:
-                    async with db.execute(f"SELECT token_address, token_name, buy_price_bnb, sold_portions FROM {positions_table}") as pos_data:
-                        pos_rows = await pos_data.fetchall()
-                        for row in pos_rows:
+                    placeholders = ",".join("?" * len(page_token_addrs))
+                    async with db.execute(
+                        f"SELECT token_address, token_name, buy_price_bnb, sold_portions FROM {positions_table} WHERE token_address IN ({placeholders})",
+                        page_token_addrs
+                    ) as pos_data:
+                        for row in await pos_data.fetchall():
                             token_address = row["token_address"]
                             if token_address:
                                 key = token_address.lower()
@@ -52,6 +96,9 @@ class DatabaseHelper:
                                     sold_records_map[key] = [{"used": False, **r} for r in parsed]
                                 except Exception:
                                     sold_records_map[key] = []
+
+            # 复用 trade_rows 作为后续处理的数据源
+            rows = trade_rows
 
             def to_float(value):
                 try:
@@ -100,154 +147,157 @@ class DatabaseHelper:
                     return "manual"
                 return r
 
-            async with db.execute(query, params) as cursor:
-                rows = await cursor.fetchall()
-                normalized = []
-                for row in rows:
-                    item = dict(row)
-                    token_address = item.get("token_address")
-                    token_name = item.get("token_name")
-                    if token_address and not token_name:
-                        token_name = position_name_map.get(token_address.lower())
+            normalized = []
+            for row in rows:
+                item = dict(row)
+                token_address = item.get("token_address")
+                token_name = item.get("token_name")
+                if token_address and not token_name:
+                    token_name = position_name_map.get(token_address.lower())
                     
-                    token_symbol = item.get("token_symbol")
-                    if not token_symbol:
-                        token_symbol = token_name
-                    if not token_name:
-                        token_name = token_symbol
+                token_symbol = item.get("token_symbol")
+                if not token_symbol:
+                    token_symbol = token_name
+                if not token_name:
+                    token_name = token_symbol
 
-                    action = (item.get("action") or "").lower()
-                    amount_token = to_float(item.get("amount_token", item.get("amount")))
-                    amount_bnb = to_float(item.get("amount_bnb"))
-                    price_bnb = to_float(item.get("price_bnb", item.get("price")))
+                action = (item.get("action") or "").lower()
+                amount_token = to_float(item.get("amount_token", item.get("amount")))
+                amount_bnb = to_float(item.get("amount_bnb"))
+                price_bnb = to_float(item.get("price_bnb", item.get("price")))
                     
-                    # Fix for potential bad data (0.001 price placeholder)
-                    if price_bnb == 0.001:
-                        price_bnb = 0.0
+                # Fix for potential bad data (0.001 price placeholder)
+                if price_bnb == 0.001:
+                    price_bnb = 0.0
 
-                    if amount_bnb <= 0 and amount_token > 0 and price_bnb > 0:
-                        amount_bnb = amount_token * price_bnb
-                    if price_bnb <= 0 and amount_token > 0 and amount_bnb > 0:
-                        price_bnb = amount_bnb / amount_token
-                    created_at = item.get("created_at", item.get("timestamp", item.get("time")))
-                    ts = parse_timestamp(created_at)
-                    if isinstance(created_at, (int, float)) or (isinstance(created_at, str) and created_at.isdigit()):
-                        created_at = datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M:%S") if ts > 0 else created_at
+                if amount_bnb <= 0 and amount_token > 0 and price_bnb > 0:
+                    amount_bnb = amount_token * price_bnb
+                if price_bnb <= 0 and amount_token > 0 and amount_bnb > 0:
+                    price_bnb = amount_bnb / amount_token
+                created_at = item.get("created_at", item.get("timestamp", item.get("time")))
+                ts = parse_timestamp(created_at)
+                if isinstance(created_at, (int, float)) or (isinstance(created_at, str) and created_at.isdigit()):
+                    created_at = datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M:%S") if ts > 0 else created_at
 
-                    trade_type = "simulation" if table_name.startswith("simulation") else "live"
-                    pnl_bnb = to_float(item.get("pnl_bnb"))
-                    pnl_percentage = to_float(item.get("pnl_percentage"))
-                    close_reason = None
+                trade_type = "simulation" if table_name.startswith("simulation") else "live"
+                pnl_bnb = to_float(item.get("pnl_bnb"))
+                pnl_percentage = to_float(item.get("pnl_percentage"))
+                close_reason = None
 
-                    if action == "sell" and token_address and token_address.lower() in sold_records_map:
-                        records = sold_records_map[token_address.lower()]
-                        best_index = None
-                        best_diff = None
-                        for idx, record in enumerate(records):
-                            if record.get("used"):
+                if action == "sell" and token_address and token_address.lower() in sold_records_map:
+                    records = sold_records_map[token_address.lower()]
+                    best_index = None
+                    best_diff = None
+                    for idx, record in enumerate(records):
+                        if record.get("used"):
+                            continue
+                        record_time = parse_timestamp(record.get("time"))
+                        diff = abs(record_time - ts) if ts > 0 and record_time > 0 else None
+                        record_amount = to_float(record.get("amount"))
+                        if diff is None:
+                            continue
+                        if amount_token > 0 and record_amount > 0:
+                            ratio = abs(record_amount - amount_token) / max(record_amount, amount_token)
+                            if ratio > 0.6:
                                 continue
-                            record_time = parse_timestamp(record.get("time"))
-                            diff = abs(record_time - ts) if ts > 0 and record_time > 0 else None
-                            record_amount = to_float(record.get("amount"))
-                            if diff is None:
-                                continue
-                            if amount_token > 0 and record_amount > 0:
-                                ratio = abs(record_amount - amount_token) / max(record_amount, amount_token)
-                                if ratio > 0.6:
-                                    continue
-                            if best_diff is None or diff < best_diff:
-                                best_diff = diff
-                                best_index = idx
-                        if best_index is not None and best_diff is not None and best_diff < 6 * 3600:
-                            record = records[best_index]
-                            record["used"] = True
-                            close_reason = normalize_reason(record.get("reason"))
+                        if best_diff is None or diff < best_diff:
+                            best_diff = diff
+                            best_index = idx
+                    if best_index is not None and best_diff is not None and best_diff < 6 * 3600:
+                        record = records[best_index]
+                        record["used"] = True
+                        close_reason = normalize_reason(record.get("reason"))
                             
-                            # Fix amount_bnb and price_bnb from sold record if missing or suspicious
-                            record_bnb_got = to_float(record.get("bnb_got"))
-                            if record_bnb_got > 0:
-                                # Update if amount_bnb is missing/zero or looks like it was calculated from 0.001 price
-                                # Or if price is 0 (we just set 0.001 to 0 above)
-                                if amount_bnb <= 0 or price_bnb == 0 or (amount_bnb > 10 and amount_token > 1000):
-                                     amount_bnb = record_bnb_got
-                                     if amount_token > 0:
-                                         price_bnb = amount_bnb / amount_token
+                        # Fix amount_bnb and price_bnb from sold record if missing or suspicious
+                        record_bnb_got = to_float(record.get("bnb_got"))
+                        if record_bnb_got > 0:
+                            # Update if amount_bnb is missing/zero or looks like it was calculated from 0.001 price
+                            # Or if price is 0 (we just set 0.001 to 0 above)
+                            if amount_bnb <= 0 or price_bnb == 0 or (amount_bnb > 10 and amount_token > 1000):
+                                 amount_bnb = record_bnb_got
+                                 if amount_token > 0:
+                                     price_bnb = amount_bnb / amount_token
 
-                            if pnl_bnb == 0 and record.get("pnl") is not None:
-                                pnl_bnb = to_float(record.get("pnl"))
-                            if pnl_percentage == 0 and pnl_bnb != 0:
-                                record_amount = to_float(record.get("amount"))
-                                buy_price = to_float(buy_price_map.get(token_address.lower()))
-                                cost = record_amount * buy_price if record_amount > 0 and buy_price > 0 else 0.0
-                                if cost > 0:
-                                    pnl_percentage = pnl_bnb / cost * 100
+                        if pnl_bnb == 0 and record.get("pnl") is not None:
+                            pnl_bnb = to_float(record.get("pnl"))
+                        if pnl_percentage == 0 and pnl_bnb != 0:
+                            record_amount = to_float(record.get("amount"))
+                            buy_price = to_float(buy_price_map.get(token_address.lower()))
+                            cost = record_amount * buy_price if record_amount > 0 and buy_price > 0 else 0.0
+                            if cost > 0:
+                                pnl_percentage = pnl_bnb / cost * 100
 
-                    normalized.append({
-                        "id": item.get("id"),
-                        "token_address": token_address,
-                        "token_name": token_name,
-                        "token_symbol": token_symbol,
-                        "action": action,
-                        "amount_token": amount_token,
-                        "amount_bnb": amount_bnb,
-                        "price_bnb": price_bnb,
-                        "pnl_bnb": pnl_bnb,
-                        "pnl_percentage": pnl_percentage,
-                        "tx_hash": item.get("tx_hash"),
-                        "created_at": created_at,
-                        "trade_type": trade_type,
-                        "close_reason": close_reason,
-                        "status": item.get("status"),
-                        "expected_amount": to_float(item.get("expected_amount")),
-                        "actual_amount": to_float(item.get("actual_amount")),
-                        "slippage_pct": to_float(item.get("slippage_pct")),
-                        "slippage_bnb": to_float(item.get("slippage_bnb")),
-                        "gas_used": int(item.get("gas_used") or 0),
-                        "gas_price_gwei": to_float(item.get("gas_price_gwei")),
-                        "gas_cost_bnb": to_float(item.get("gas_cost_bnb")),
-                        "total_cost_bnb": to_float(item.get("total_cost_bnb")),
-                        "dex_name": item.get("dex_name"),
-                        "_ts": ts
-                    })
+                normalized.append({
+                    "id": item.get("id"),
+                    "token_address": token_address,
+                    "token_name": token_name,
+                    "token_symbol": token_symbol,
+                    "action": action,
+                    "amount_token": amount_token,
+                    "amount_bnb": amount_bnb,
+                    "price_bnb": price_bnb,
+                    "pnl_bnb": pnl_bnb,
+                    "pnl_percentage": pnl_percentage,
+                    "tx_hash": item.get("tx_hash"),
+                    "created_at": created_at,
+                    "trade_type": trade_type,
+                    "close_reason": close_reason,
+                    "status": item.get("status"),
+                    "expected_amount": to_float(item.get("expected_amount")),
+                    "actual_amount": to_float(item.get("actual_amount")),
+                    "slippage_pct": to_float(item.get("slippage_pct")),
+                    "slippage_bnb": to_float(item.get("slippage_bnb")),
+                    "gas_used": int(item.get("gas_used") or 0),
+                    "gas_price_gwei": to_float(item.get("gas_price_gwei")),
+                    "gas_cost_bnb": to_float(item.get("gas_cost_bnb")),
+                    "total_cost_bnb": to_float(item.get("total_cost_bnb")),
+                    "dex_name": item.get("dex_name"),
+                    "_ts": ts
+                })
 
-                normalized.sort(key=lambda x: x["_ts"])
-                lots_map = {}
-                for trade in normalized:
-                    token_address = trade["token_address"]
-                    if not token_address:
-                        continue
-                    lots = lots_map.setdefault(token_address, [])
-                    if trade["action"] == "buy":
-                        if trade["amount_token"] > 0 and trade["price_bnb"] > 0:
-                            lots.append({"amount": trade["amount_token"], "price": trade["price_bnb"]})
-                        continue
-                    if trade["action"] == "sell" and (trade["pnl_bnb"] == 0 or trade["pnl_percentage"] == 0):
-                        sell_price = trade["price_bnb"]
-                        sell_amount = trade["amount_token"]
-                        if sell_price > 0 and sell_amount > 0 and lots:
-                            remaining = sell_amount
-                            cost_sum = 0.0
-                            sell_sum = 0.0
-                            while remaining > 0 and lots:
-                                lot = lots[0]
-                                lot_amount = lot["amount"]
-                                use_amount = min(remaining, lot_amount)
-                                cost_sum += use_amount * lot["price"]
-                                sell_sum += use_amount * sell_price
-                                lot["amount"] -= use_amount
-                                remaining -= use_amount
-                                if lot["amount"] <= 0:
-                                    lots.pop(0)
-                            if cost_sum > 0:
-                                pnl = sell_sum - cost_sum
-                                trade["pnl_bnb"] = pnl if trade["pnl_bnb"] == 0 else trade["pnl_bnb"]
-                                if trade["pnl_percentage"] == 0:
-                                    trade["pnl_percentage"] = pnl / cost_sum * 100
+            normalized.sort(key=lambda x: x["_ts"])
+            lots_map = {}
+            for trade in normalized:
+                token_address = trade["token_address"]
+                if not token_address:
+                    continue
+                lots = lots_map.setdefault(token_address, [])
+                if trade["action"] == "buy":
+                    if trade["amount_token"] > 0 and trade["price_bnb"] > 0:
+                        lots.append({"amount": trade["amount_token"], "price": trade["price_bnb"]})
+                    continue
+                if trade["action"] == "sell" and (trade["pnl_bnb"] == 0 or trade["pnl_percentage"] == 0):
+                    sell_price = trade["price_bnb"]
+                    sell_amount = trade["amount_token"]
+                    if sell_price > 0 and sell_amount > 0 and lots:
+                        remaining = sell_amount
+                        cost_sum = 0.0
+                        sell_sum = 0.0
+                        while remaining > 0 and lots:
+                            lot = lots[0]
+                            lot_amount = lot["amount"]
+                            use_amount = min(remaining, lot_amount)
+                            cost_sum += use_amount * lot["price"]
+                            sell_sum += use_amount * sell_price
+                            lot["amount"] -= use_amount
+                            remaining -= use_amount
+                            if lot["amount"] <= 0:
+                                lots.pop(0)
+                        if cost_sum > 0:
+                            pnl = sell_sum - cost_sum
+                            trade["pnl_bnb"] = pnl if trade["pnl_bnb"] == 0 else trade["pnl_bnb"]
+                            if trade["pnl_percentage"] == 0:
+                                trade["pnl_percentage"] = pnl / cost_sum * 100
 
-                normalized.sort(key=lambda x: x["_ts"], reverse=True)
-                for item in normalized:
-                    item.pop("_ts", None)
-                return normalized
+            normalized.sort(key=lambda x: x["_ts"], reverse=True)
+            for item in normalized:
+                item.pop("_ts", None)
+            return {
+                "items": normalized,
+                "total": total,
+                "page": page,
+                "has_more": (offset + len(normalized)) < total
+            }
 
     async def get_discoveries(self, page=1, limit=20, result="all", search=None, start_date=None, end_date=None):
         offset = (page - 1) * limit

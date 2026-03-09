@@ -513,13 +513,19 @@ async def websocket_endpoint(websocket: WebSocket, api_key: str = Query(None)):
             pass
 
 @app.get("/api/trades", dependencies=[Depends(verify_api_key)])
-async def get_trades(page: int = 1, limit: int = 20, type: str = "all"):
+async def get_trades(
+    page: int = 1,
+    limit: int = 100,
+    type: str = "all",
+    time_range: str = "all",   # all | today | 7d | 30d
+    token_search: str = ""
+):
     table_name = "trades"
     positions_table = "positions"
     if bot and bot.mode == "simulation":
         table_name = "simulation_trades"
         positions_table = "simulation_positions"
-    return await db_helper.get_trades(page, limit, type, table_name, positions_table)
+    return await db_helper.get_trades(page, limit, type, table_name, positions_table, time_range, token_search)
 
 @app.get("/api/discoveries", dependencies=[Depends(verify_api_key)])
 async def get_discoveries(

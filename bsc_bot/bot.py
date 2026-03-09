@@ -11,6 +11,7 @@ from dotenv import load_dotenv
 # Use absolute imports from project root (assuming project root is in sys.path)
 # web/api.py adds project root. main.py adds project root.
 from bsc_bot.monitor.pair_listener import PairListener
+from bsc_bot.monitor.four_meme_scanner import FourMemeRealtimeScanner
 from bsc_bot.analyzer.security_checker import SecurityChecker
 from bsc_bot.analyzer.performance import PerformanceAnalyzer
 from bsc_bot.executor.trader import BSCExecutor
@@ -41,6 +42,7 @@ class TradingBot:
         # Components
         self.listener = PairListener(config_path=self.config_path, db_path=self.db_path)
         self.security_checker = SecurityChecker()
+        self.security_checker.set_db_path(self.db_path)
         self.executor = BSCExecutor(config_path=self.config_path, mode=self.mode)
         self.position_manager = PositionManager(self.executor, db_path=self.db_path, mode=self.mode)
         self.performance_analyzer = PerformanceAnalyzer(db_path=self.db_path)
@@ -56,6 +58,7 @@ class TradingBot:
         self.running = False
         self.paused = False  # Pause new buys
         self.tasks = []
+        self.four_meme_scanner = None  # initialized in setup() after w3 is ready
 
     def load_config(self):
         try:
@@ -127,6 +130,19 @@ class TradingBot:
             self.security_checker.set_web3(self.executor.w3)
             self.performance_analyzer.w3 = self.executor.w3
             logger.info("SecurityChecker & Analyzer updated with Web3 connection")
+
+            # Initialize FourMeme realtime scanner if enabled
+            scanner_cfg = self.config.get('four_meme_scanner', {})
+            if scanner_cfg.get('enabled', False):
+                self.four_meme_scanner = FourMemeRealtimeScanner(
+                    w3=self.executor.w3,
+                    db_path=self.db_path,
+                    security_checker=self.security_checker,
+                    executor=self.executor,
+                    position_manager=self.position_manager,
+                    config=self.config,
+                )
+                logger.info("FourMemeRealtimeScanner 初始化完成")
         else:
             logger.warning("Running in limited mode (Web3 disconnected)")
 
@@ -218,6 +234,11 @@ class TradingBot:
                 return
 
             four_meme_cfg = self.config.get("four_meme", {})
+
+            # ── four_meme scanner模式：注册到扫描器，跳过即时买入 ──
+            if is_four_meme and self.four_meme_scanner is not None:
+                await self.four_meme_scanner.register_token(token_address, token_symbol, token_symbol)
+                return  # 后续由扫描器处理（在75-92%进度时评估买入）
 
             # ── four_meme 总开关检查 ──
             if is_four_meme and not four_meme_cfg.get("enabled", True):
@@ -315,6 +336,8 @@ class TradingBot:
                         status = "bought" if decision in ["buy", "half_buy"] else "rejected"
                         if decision == "notify":
                             status = "analyzing"
+                        # four_meme 没有 pair_address，DB 主键用 token_address
+                        db_key = token_address if is_four_meme else pair_address
                         await db.execute(
                             """UPDATE pairs SET
                                security_score = ?,
@@ -329,7 +352,7 @@ class TradingBot:
                                 json.dumps(analysis_result["raw_data"]),
                                 status,
                                 risk_str,
-                                pair_address,
+                                db_key,
                             ),
                         )
                         await db.commit()
@@ -358,6 +381,28 @@ class TradingBot:
 
                 # four_meme bonding curve 阶段没有 PancakeSwap pair，买入直接调工厂，无需 pair 地址
 
+                # ── 分级仓位计算（非four_meme） ──
+                base_amount = float(self.config.get("trading", {}).get("buy_amount", 0.1))
+                pos_sizing = self.config.get("trading", {}).get("position_sizing", {})
+                if pos_sizing and not is_four_meme:
+                    if score >= 95:
+                        sized_amount = pos_sizing.get("score_95_plus", base_amount)
+                    elif score >= 90:
+                        sized_amount = pos_sizing.get("score_90_94", base_amount * 0.75)
+                    else:
+                        sized_amount = pos_sizing.get("score_below_90", base_amount * 0.5)
+                    # 当日净亏损超阈值 → 仓位减半
+                    pm_stats = self.position_manager.daily_stats
+                    net_loss = pm_stats.get("loss_bnb", 0.0) - pm_stats.get("profit_bnb", 0.0)
+                    daily_loss_threshold = pos_sizing.get("daily_loss_threshold", 0.3)
+                    if net_loss > daily_loss_threshold:
+                        daily_loss_mult = pos_sizing.get("daily_loss_multiplier", 0.5)
+                        sized_amount *= daily_loss_mult
+                        logger.warning(f"[风控] 今日净亏{net_loss:.3f} BNB，买入减半 → {sized_amount:.3f} BNB")
+                    score_amount_multiplier = (sized_amount / base_amount) if base_amount > 0 else 1.0
+                else:
+                    score_amount_multiplier = 1.0
+
                 # four_meme 使用专属 buy_amount，换算成 multiplier
                 if is_four_meme:
                     base_amount = self.config.get("trading", {}).get("buy_amount", 0.1)
@@ -375,12 +420,18 @@ class TradingBot:
                 elif pre_built_data and "tx" in pre_built_data:
                     logger.info("Using pre-built transaction for fast execution...")
                     pre_built_data["token_symbol"] = token_symbol
+                    # 应用分级仓位：修改pre-built tx的value
+                    if score_amount_multiplier != 1.0:
+                        pre_built_data["tx"]["value"] = int(pre_built_data["tx"]["value"] * score_amount_multiplier)
                     if decision == "half_buy":
                         pre_built_data["tx"]["value"] = pre_built_data["tx"]["value"] // 2
+                    actual_bnb = self.executor.w3.from_wei(pre_built_data["tx"]["value"], 'ether')
+                    logger.info(f"[position_sizing] score={score} → {float(actual_bnb):.4f} BNB (multiplier={score_amount_multiplier:.2f})")
                     buy_result = await self.executor.fast_buy_token(pre_built_data)
                 else:
                     logger.warning("Pre-build failed or missing, falling back to standard buy")
-                    amount_multiplier = 0.5 if decision == "half_buy" else 1.0
+                    amount_multiplier = score_amount_multiplier * (0.5 if decision == "half_buy" else 1.0)
+                    logger.info(f"[position_sizing] score={score} → multiplier={amount_multiplier:.2f}")
                     buy_result = await self.executor.buy_token(
                         token_address=token_address,
                         token_symbol=token_symbol,
@@ -430,7 +481,8 @@ class TradingBot:
                         pair_address=pair_address,
                         initial_liquidity_bnb=initial_state.get('liquidity_bnb', 0.0) if initial_state else 0.0,
                         dex_name=dex_name,
-                        security_score=score
+                        security_score=score,
+                        deployer_address=deployer
                     )
                     dur8 = _ms(t8)
                     logger.info(f"⏱️ 8.仓位入库: {dur8:.0f}ms")
@@ -625,6 +677,9 @@ class TradingBot:
         ]
         if four_meme_near_grad.get('enabled', False):
             self.tasks.append(asyncio.create_task(self.monitor_near_graduation()))
+        if self.four_meme_scanner:
+            self.tasks.append(asyncio.create_task(self.four_meme_scanner.run()))
+            logger.info("FourMemeRealtimeScanner 已加入任务列表")
         logger.success("Bot background tasks started")
 
     async def run(self):

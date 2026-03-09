@@ -11,6 +11,8 @@ const extractDetails = (raw = {}) => {
   const simulation = raw.simulation || {};
   const holders = raw.holders || {};
   const contract = raw.contract || {};
+  const social = raw.social || {};
+  const deployerHistory = raw.deployer_history || {};
 
   const isHoneypot =
     simulation.is_honeypot === true ||
@@ -33,7 +35,21 @@ const extractDetails = (raw = {}) => {
   const isRenounced = goplus.owner_address === '0x0000000000000000000000000000000000000000';
   const lpLocked = holders.lp_locked === true || goplus.lp_locked === '1';
 
-  return { isHoneypot, buyTax, sellTax, holderConcentration, isOpenSource, isRenounced, lpLocked };
+  // Four.meme specific
+  const holderCount = raw.holder_count != null ? raw.holder_count : null;
+  const creatorPercent = raw.creator_percent != null ? parseFloat(raw.creator_percent) : null;
+  const hasSocial = !!(social.twitter || social.telegram || social.website);
+  const twitterUrl = social.twitter || '';
+  const telegramUrl = social.telegram || '';
+  const websiteUrl = social.website || '';
+  const deployerTotal = deployerHistory.total != null ? deployerHistory.total : null;
+  const deployerRugs = deployerHistory.rugs || 0;
+
+  return {
+    isHoneypot, buyTax, sellTax, holderConcentration, isOpenSource, isRenounced, lpLocked,
+    holderCount, creatorPercent, hasSocial, twitterUrl, telegramUrl, websiteUrl,
+    deployerTotal, deployerRugs,
+  };
 };
 
 const getScoreColor = (score) => {
@@ -166,6 +182,38 @@ const DiscoveryDrawer = ({ isOpen, closeModal, discovery }) => {
                           <PctRow label="买税" value={flat.buyTax} />
                           <PctRow label="卖税" value={flat.sellTax} />
                           <PctRow label="前5持仓集中度" value={flat.holderConcentration} />
+                          {flat.holderCount != null && (
+                            <div className="flex items-center justify-between py-2 border-b border-gray-100">
+                              <span className="text-sm text-gray-500">持有人数量</span>
+                              <span className={`text-sm font-medium ${flat.holderCount < 5 ? 'text-rose-600' : flat.holderCount < 10 ? 'text-orange-500' : 'text-gray-700'}`}>
+                                {flat.holderCount} 人
+                              </span>
+                            </div>
+                          )}
+                          {flat.creatorPercent != null && (
+                            <div className="flex items-center justify-between py-2 border-b border-gray-100">
+                              <span className="text-sm text-gray-500">Dev持仓比例</span>
+                              <span className={`text-sm font-medium ${flat.creatorPercent > 50 ? 'text-rose-600' : flat.creatorPercent > 20 ? 'text-orange-500' : 'text-gray-700'}`}>
+                                {flat.creatorPercent.toFixed(1)}%
+                              </span>
+                            </div>
+                          )}
+                          <div className="flex items-center justify-between py-2 border-b border-gray-100">
+                            <span className="text-sm text-gray-500">社交媒体</span>
+                            <div className="flex items-center gap-2 text-sm">
+                              {flat.twitterUrl ? <span className="text-emerald-600">Twitter✅</span> : <span className="text-gray-400">Twitter❌</span>}
+                              {flat.telegramUrl ? <span className="text-emerald-600">TG✅</span> : <span className="text-gray-400">TG❌</span>}
+                              {flat.websiteUrl ? <span className="text-emerald-600">官网✅</span> : <span className="text-gray-400">官网❌</span>}
+                            </div>
+                          </div>
+                          {flat.deployerTotal != null && (
+                            <div className="flex items-center justify-between py-2 border-b border-gray-100 last:border-0">
+                              <span className="text-sm text-gray-500">Deployer历史</span>
+                              <span className="text-sm font-medium text-gray-700">
+                                {flat.deployerTotal === 0 ? '首次发币' : `发过 ${flat.deployerTotal} 个币，rug ${flat.deployerRugs} 个`}
+                              </span>
+                            </div>
+                          )}
                         </Card>
                       </section>
 

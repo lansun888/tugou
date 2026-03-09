@@ -918,7 +918,7 @@ class BSCExecutor:
         """
         return await self.buy_token(token_address, token_symbol="UNKNOWN", amount_bnb=amount_bnb, dex_name=None)
 
-    async def sell_token(self, token_address, token_symbol="UNKNOWN", sell_percentage=100, slippage=None, gas_price=None, simulated_balance=None, pnl_bnb=0.0, pnl_percentage=0.0, manual_price=None, sell_percentage_real=None, cost_basis_bnb=None, dex_name=None):
+    async def sell_token(self, token_address, token_symbol="UNKNOWN", sell_percentage=100, slippage=None, gas_price=None, simulated_balance=None, pnl_bnb=0.0, pnl_percentage=0.0, manual_price=None, sell_percentage_real=None, cost_basis_bnb=None, dex_name=None, note=None):
         """
         卖出代币
         :param token_address: 代币地址
@@ -1010,7 +1010,8 @@ class BSCExecutor:
                 gas_price_gwei=est_gas_price_gwei,
                 gas_cost_bnb=est_gas_cost_bnb,
                 total_cost_bnb=total_cost_bnb,
-                dex_name=dex_name
+                dex_name=dex_name,
+                note=note
             )
             
             return {
@@ -1710,7 +1711,7 @@ class BSCExecutor:
 
     async def _log_trade(self, token_addr, token_name, action, amount_token, amount_bnb, tx_hash, status, price_bnb=None, token_symbol=None, pnl_bnb=0.0, pnl_percentage=0.0,
                          expected_amount=0.0, actual_amount=0.0, slippage_pct=0.0, slippage_bnb=0.0,
-                         gas_used=0, gas_price_gwei=0.0, gas_cost_bnb=0.0, total_cost_bnb=0.0, sell_percentage=100.0, dex_name=None):
+                         gas_used=0, gas_price_gwei=0.0, gas_cost_bnb=0.0, total_cost_bnb=0.0, sell_percentage=100.0, dex_name=None, note=None):
         """记录交易到数据库"""
         try:
             # Try to calculate price_bnb if not provided
@@ -1739,17 +1740,17 @@ class BSCExecutor:
                 # Schema: id, token_address, token_name, token_symbol, action, amount, price, tx_hash, status, timestamp, pnl_percentage, pnl_bnb + slippage cols
                 await db.execute(f"""
                     INSERT INTO {self.trades_table} (
-                        token_address, token_name, token_symbol, action, amount_token, amount_bnb, price_bnb, 
+                        token_address, token_name, token_symbol, action, amount_token, amount_bnb, price_bnb,
                         tx_hash, status, created_at, pnl_bnb, pnl_percentage, sell_percentage,
                         expected_amount, actual_amount, slippage_pct, slippage_bnb,
-                        gas_used, gas_price_gwei, gas_cost_bnb, total_cost_bnb, dex_name
+                        gas_used, gas_price_gwei, gas_cost_bnb, total_cost_bnb, dex_name, note
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
-                    token_addr, safe_token_name, token_symbol, action, float(amount_token), float(amount_bnb) if amount_bnb else 0.0, float(price_bnb) if price_bnb else 0.0, 
+                    token_addr, safe_token_name, token_symbol, action, float(amount_token), float(amount_bnb) if amount_bnb else 0.0, float(price_bnb) if price_bnb else 0.0,
                     tx_hash, status, timestamp, pnl_bnb, pnl_percentage, float(sell_percentage),
                     float(expected_amount), float(actual_amount), float(slippage_pct), float(slippage_bnb),
-                    int(gas_used), float(gas_price_gwei), float(gas_cost_bnb), float(total_cost_bnb), dex_name
+                    int(gas_used), float(gas_price_gwei), float(gas_cost_bnb), float(total_cost_bnb), dex_name, note
                 ))
                 await db.commit()
         except Exception as e:

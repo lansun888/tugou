@@ -26,6 +26,15 @@ FOUR_MEME_FACTORY = "0x5c952063c7fc8610FFDB798152D69F0B9550762b"
 # Real graduation event topic unknown (rare); monitoring is done via TokenCreate only.
 FOUR_MEME_TOKEN_CREATE_TOPIC = "0x396d5e902b675b032348d3d2e9517ee8f0c4a926603fbc075d3d282ff00cad20"
 
+# 自修复DDL：在任何使用 deployer_history 的连接内执行，确保表存在
+_DEPLOYER_HISTORY_DDL = """
+CREATE TABLE IF NOT EXISTS deployer_history (
+    deployer TEXT,
+    pair_address TEXT,
+    created_at TIMESTAMP
+)
+"""
+
 class PriorityPairQueue:
     """异步优先级队列：流动性更高的新币优先处理。
 
@@ -88,7 +97,8 @@ class PairListener:
             return {}
 
     async def init_db(self):
-        """初始化数据库表"""
+        """初始化数据库表（确保所有表存在）"""
+        logger.info(f"[DB] 初始化数据库: {self.db_path}")
         async with aiosqlite.connect(self.db_path) as db:
             # 记录发现的Pair
             await db.execute("""
@@ -135,14 +145,9 @@ class PairListener:
                 logger.error(f"Migration failed: {e}")
 
             # 记录部署者历史
-            await db.execute("""
-                CREATE TABLE IF NOT EXISTS deployer_history (
-                    deployer TEXT,
-                    pair_address TEXT,
-                    created_at TIMESTAMP
-                )
-            """)
+            await db.execute(_DEPLOYER_HISTORY_DDL)
             await db.commit()
+        logger.info("[DB] 初始化完成")
 
     async def _close_provider(self, provider):
         """安全关闭 Web3 provider，避免重复的清理代码"""
@@ -313,6 +318,7 @@ class PairListener:
         # 3. 部署者频率过滤
         try:
             async with aiosqlite.connect(self.db_path) as db:
+                await db.execute(_DEPLOYER_HISTORY_DDL)
                 one_hour_ago = datetime.now() - timedelta(hours=1)
                 async with db.execute(
                     "SELECT COUNT(*) FROM deployer_history WHERE deployer = ? AND created_at > ?",
@@ -471,6 +477,7 @@ class PairListener:
                 competition = await self.analyze_competition(tx_hash, block_number)
 
                 async with aiosqlite.connect(self.db_path) as db:
+                    await db.execute(_DEPLOYER_HISTORY_DDL)
                     await db.execute(
                         "INSERT INTO deployer_history (deployer, pair_address, created_at) VALUES (?, ?, ?)",
                         (deployer, token_address, datetime.now())
@@ -530,6 +537,7 @@ class PairListener:
             
             # 4. 记录部署者
             async with aiosqlite.connect(self.db_path) as db:
+                await db.execute(_DEPLOYER_HISTORY_DDL)
                 await db.execute(
                     "INSERT INTO deployer_history (deployer, pair_address, created_at) VALUES (?, ?, ?)",
                     (deployer, pair_address, datetime.now())
@@ -572,26 +580,23 @@ class PairListener:
             )
             
             # 存库
+            # four_meme bonding curve 没有 pair 地址，用 token 地址作为 DB 主键
+            db_pair_key = target_token if dex_name == 'four_meme' else pair_address
             try:
                 async with aiosqlite.connect(self.db_path) as db:
-                    # Check if price_at_discovery column exists (it should due to migration in performance.py)
-                    # But pair_listener might run before performance.py migration if run separately?
-                    # We should handle it safely or assume migration ran.
-                    # Since we are modifying the INSERT, let's include price_at_discovery.
-                    
                     await db.execute(
-                        """INSERT OR IGNORE INTO pairs 
+                        """INSERT OR IGNORE INTO pairs
                            (pair_address, token0, token1, target_token, dex_name, discovered_at, deployer, initial_liquidity, is_risky, risk_reason, token_name, token_symbol, security_score, status, price_at_discovery)
                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                         (
-                            pair_address, 
-                            WBNB_ADDRESS, 
-                            target_token, 
-                            target_token, 
-                            dex_name, 
-                            datetime.now(), 
-                            deployer, 
-                            liquidity_bnb, 
+                            db_pair_key,
+                            WBNB_ADDRESS,
+                            target_token,
+                            target_token,
+                            dex_name,
+                            datetime.now(),
+                            deployer,
+                            liquidity_bnb,
                             len(competition["risk_tags"]) > 0,
                             ",".join(competition["risk_tags"]),
                             token_info.get("name", "Unknown"),

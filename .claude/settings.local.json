@@ -39,7 +39,12 @@
       "Bash(PYTHONIOENCODING=utf-8 grep:*)",
       "Bash(/c/Users/admin/AppData/Local/Microsoft/WindowsApps/python3.exe:*)",
       "Bash(cmd.exe:*)",
-      "Bash(python3.12:*)"
+      "Bash(python3.12:*)",
+      "Bash(ls /d/Python*)",
+      "Read(//c/Users/admin/**)",
+      "Bash($PYTHON:*)",
+      "Bash(echo:*)",
+      "Bash(__NEW_LINE_3410dc97c7cd9856__ for:*)"
     ]
   }
 }

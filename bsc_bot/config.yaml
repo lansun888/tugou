@@ -6,10 +6,10 @@ mode: simulation
 monitor:
   competition_threshold: 3
   dex_enabled:
-    biswap: true
-    pancakeswap_v2: true
-    pancakeswap_v3: true
-    four_meme: false          # four.meme TokenCreate 监听开关，false=关闭
+    biswap: false             # 暂时关闭
+    pancakeswap_v2: false     # 暂时关闭
+    pancakeswap_v3: false     # 暂时关闭
+    four_meme: true           # 只开 four.meme TokenCreate 监听
   enable_new_token_sniping: true
   enable_whale_watching: true
   min_liquidity_bnb: 10
@@ -66,8 +66,10 @@ position_management:
   require_lp_locked: false
   take_profit:
     levels:
+    - - 50
+      - 15
     - - 100
-      - 25
+      - 20
     - - 200
       - 25
     - - 400
@@ -85,8 +87,23 @@ position_management:
     - - 72
       - -999
       - 100
+  two_min_check:
+    liq_rug_threshold_bnb: 0.5   # 流动性低于此值认定rug
+    liq_drop_pct: 50              # 流动性下跌超过此%认定rug
+    remove_momentum_check: true   # 已移除pnl<20%的momentum判断
+  five_min_check:
+    enabled: true
+    pnl_threshold: -15            # 5分钟后pnl低于此值止损
+  emergency_sell:
+    max_retries: 5
+    slippage_ladder:
+    - 12
+    - 18
+    - 27
+    - 40
+    - 49
   trailing_stop:
-    initial_stop_loss: 35
+    initial_stop_loss: 30
     levels:
     - - 2
       - 50
@@ -100,13 +117,19 @@ position_management:
 trading:
   buy_amount: 0.1
   deadline_seconds: 45
+  position_sizing:
+    score_95_plus: 0.1            # 95分以上全仓0.1 BNB
+    score_90_94: 0.075            # 90-94分3/4仓
+    score_below_90: 0.05          # 90分以下半仓
+    daily_loss_threshold: 0.3     # 当日亏损超此值后仓位减半
+    daily_loss_multiplier: 0.5    # 减半比例
 
 four_meme:
-  enabled: false              # 总开关，false=关闭所有 four.meme 功能
+  enabled: true               # 总开关，开启 four.meme 功能
   contract: "0x5c952063c7fc8610FFDB798152D69F0B9550762b"
   min_score: 75
   buy_amount: 0.05
-  min_liquidity: 3
+  min_liquidity: 8
   skip_observation: true
   pre_analyze: true
   skip_checks:
@@ -130,3 +153,51 @@ four_meme:
   slippage_alert_threshold: 15
   stop_loss_percentage: -20
   take_profit_percentage: 50
+
+four_meme_scanner:
+  enabled: true
+  use_bitquery: false           # 已关闭，改用链上WebSocket（完全免费）
+  progress_min: 75              # 75%开始关注
+  progress_max: 92              # 超92%放弃
+  buy_amount_bnb: 0.05
+  min_score: 70                 # 基础分70，进度75%+本身是市场筛选
+  pregrad_max_wait_minutes: 20  # 超过20分钟未毕业则止损
+  pregrad_regress_pct: 5        # 进度退化超过5%则止损
+
+four_meme_strategy:
+  # 安全检测（Flagent模型：基础分60，买入门槛75）
+  security:
+    min_score: 75
+
+  # 止盈阶梯（Four.meme 波动剧烈，快速锁定利润）
+  take_profit:
+    - multiplier: 1.5
+      sell_ratio: 30          # 涨 50% 卖 30%
+    - multiplier: 2.0
+      sell_ratio: 25          # 涨 100% 卖 25%
+    - multiplier: 3.0
+      sell_ratio: 25          # 涨 200% 卖 25%
+    - multiplier: 5.0
+      sell_ratio: 20          # 涨 400% 卖剩余
+
+  # 止损策略（更紧，死得快要反应快）
+  stop_loss:
+    initial: -20              # 初始止损 -20%（普通币 -30%）
+    time_stops:
+      - minutes: 3
+        pnl_threshold: -10    # 3 分钟还亏 10%，走人
+      - minutes: 10
+        pnl_threshold: 0      # 10 分钟还亏损，走人
+      - minutes: 30
+        pnl_threshold: 50     # 30 分钟涨幅不到 50%，走人
+
+  # 追踪止损（涨一倍后锁定利润，比普通币更紧）
+  trailing_stop:
+    after_1x: 0.80            # 涨一倍后，价格跌回最高价 80% 以下离场
+    after_2x: 1.80            # 涨两倍后，价格跌回买入价 1.80 倍以下离场
+    after_3x: 2.80            # 涨三倍后，价格跌回买入价 2.80 倍以下离场
+
+  # 2 分钟貔貅检测（比普通币更严格）
+  two_min_check:
+    liq_drop_pct: 30          # 流动性跌 30% 就走（普通币 50%）
+    liq_rug_threshold_bnb: 3  # 流动性低于 3 BNB 就走（普通币 0.5）

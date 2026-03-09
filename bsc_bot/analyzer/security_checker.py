@@ -53,6 +53,13 @@ HONEYPOT_IS_API_URL = "https://api.honeypot.is/v2/IsHoneypot"
 BSCSCAN_API_URL = "https://api.etherscan.io/v2/api?chainid=56" 
 BSCSCAN_API_KEY = os.getenv("BSCSCAN_API_KEY", "")
 
+# GMGN API
+GMGN_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Accept": "application/json",
+    "Referer": "https://gmgn.ai/",
+}
+
 # 必须成功的检测项 (Fail-Safe)
 # holders 不在此列：新币上线初期无真实钱包持仓是正常现象，改为评分降权而非硬拒绝
 REQUIRED_CHECKS = [
@@ -85,6 +92,7 @@ class SecurityChecker:
     def __init__(self, w3: AsyncWeb3 = None):
         self.w3 = w3
         self.session = None
+        self.db_path = None
         self.local_simulator = LocalSimulator(w3) if w3 else None
         self.blacklist_manager = BlacklistManager()
         self.blacklist = self._load_blacklist()
@@ -92,6 +100,117 @@ class SecurityChecker:
     def set_web3(self, w3: AsyncWeb3):
         """Update Web3 instance and re-initialize simulator"""
         self.w3 = w3
+
+    def set_db_path(self, db_path: str):
+        """设置本地数据库路径（用于 deployer 历史查询）"""
+        self.db_path = db_path
+
+    async def _check_deployer_history(self, deployer_address: str) -> Dict[str, Any]:
+        """查询 deployer 历史发币的 rug 率（本地DB + BSCScan双源）"""
+        if not deployer_address:
+            return {"passed": True, "total": 0, "rugs": 0, "onchain_total": 0, "onchain_migrated": 0}
+
+        FOUR_MEME_FACTORY = "0x5c952063c7fc8610ffdb798152d69f0b9550762b"
+
+        # ── 本地DB查询 & BSCScan并行 ──
+        local_total, local_rugs = 0, 0
+        onchain_total, onchain_migrated = 0, 0
+
+        async def _local_db_query():
+            if not self.db_path:
+                return 0, 0
+            try:
+                import aiosqlite
+                async with aiosqlite.connect(self.db_path) as db:
+                    async with db.execute(
+                        """
+                        SELECT COUNT(*) as total,
+                          SUM(CASE WHEN close_reason IN (
+                            'rug_pull_confirmed','liq_drain_2min','delayed_honeypot',
+                            'liq_drop_2min','no_activity_2min'
+                          ) THEN 1 ELSE 0 END) as rugs
+                        FROM simulation_positions
+                        WHERE deployer_address = ?
+                        """,
+                        (deployer_address,)
+                    ) as cursor:
+                        row = await cursor.fetchone()
+                        return (row[0] or 0, row[1] or 0) if row else (0, 0)
+            except Exception as e:
+                logger.debug(f"[deployer] 本地DB查询失败: {e}")
+                return 0, 0
+
+        async def _bscscan_query():
+            """BSCScan双查询：txlist(factory调用)=发币数 + txlistinternal(factory→deployer)=迁移数"""
+            try:
+                session = await self._get_session()
+                # 查询1：deployer → factory 的txns = 总发币数
+                params_tx = {
+                    "module": "account", "action": "txlist",
+                    "address": deployer_address,
+                    "startblock": 0, "endblock": 99999999,
+                    "page": 1, "offset": 100, "sort": "desc",
+                    "apikey": BSCSCAN_API_KEY
+                }
+                # 查询2：factory → deployer 的内部txns = 迁移数（graduation时工厂退费）
+                params_int = {
+                    "module": "account", "action": "txlistinternal",
+                    "address": deployer_address,
+                    "startblock": 0, "endblock": 99999999,
+                    "page": 1, "offset": 100, "sort": "desc",
+                    "apikey": BSCSCAN_API_KEY
+                }
+                async def _get(params):
+                    async with session.get(BSCSCAN_API_URL, params=params, timeout=5) as r:
+                        return await r.json()
+                d1, d2 = await asyncio.gather(_get(params_tx), _get(params_int))
+
+                txns = d1.get("result", []) if isinstance(d1.get("result"), list) else []
+                internal = d2.get("result", []) if isinstance(d2.get("result"), list) else []
+
+                total = sum(1 for t in txns
+                            if t.get("to", "").lower() == FOUR_MEME_FACTORY
+                            and t.get("isError") == "0")
+                migrated = sum(1 for t in internal
+                               if t.get("from", "").lower() == FOUR_MEME_FACTORY
+                               and t.get("isError") == "0"
+                               and int(t.get("value", 0)) > 0)
+                return total, migrated
+            except Exception as e:
+                logger.debug(f"[deployer] BSCScan查询失败(跳过): {e}")
+                return 0, 0
+
+        (local_total, local_rugs), (onchain_total, onchain_migrated) = await asyncio.gather(
+            _local_db_query(), _bscscan_query()
+        )
+
+        result = {
+            "passed": True,
+            "total": local_total, "rugs": local_rugs,
+            "onchain_total": onchain_total, "onchain_migrated": onchain_migrated,
+        }
+
+        # ── 本地DB rug率判断（已有数据）──
+        if local_total >= 3 and local_rugs / local_total > 0.5:
+            result["passed"] = False
+            result["reason"] = f"本地历史rug率{local_rugs/local_total*100:.0f}%({local_rugs}/{local_total})"
+            return result
+
+        # ── 链上发币数判断（BSCScan） ──
+        if onchain_total >= 5:
+            migration_rate = onchain_migrated / onchain_total
+            if onchain_migrated == 0:
+                # 发过>=5个币但无一迁移（全部归零）
+                result["passed"] = False
+                result["reason"] = f"Dev发过{onchain_total}个币迁移率0%（全部归零）"
+                return result
+            if onchain_total >= 10 and migration_rate < 0.1:
+                result["passed"] = False
+                result["reason"] = (f"Dev成功率仅{migration_rate*100:.0f}%"
+                                    f"({onchain_migrated}/{onchain_total})")
+                return result
+
+        return result
         self.local_simulator = LocalSimulator(w3) if w3 else None
         
     async def _get_session(self):
@@ -819,26 +938,166 @@ class SecurityChecker:
         logger.info(f"⏱️ [local_checks] step1_deployer_db={dur1:.0f}ms step2_mem={dur2:.0f}ms step3_get_code={dur3:.0f}ms step4_simulate={dur4:.0f}ms 总={(time.perf_counter()-t0)*1000:.0f}ms")
         return out
 
-    async def _analyze_four_meme(self, token_address: str, deployer_address: str) -> Dict[str, Any]:
-        """Four.Meme 专用分析逻辑
+    async def _check_gmgn_signals(self, token_address: str) -> dict:
+        """GMGN三端点 + DexScreener并行查询（非阻塞，任何端点失败不影响整体）
 
-        基础分 75（已考虑平台特性）：
-        - 合约未开源：平台统一模板，不扣分
-        - 权限未放弃：平台机制，不扣分
-        - 流动性未锁定：bonding curve 机制，不扣分
-        只检测真正有意义的风险：貔貅、税率、持仓集中、黑名单
-        0 分仅在确认貔貅时出现。
+        token_stat        → holder_count, bot_degen_count, creator_created_count,
+                            creator_hold_rate, top_10_holder_rate
+        mutil_window      → is_show_alert, flags, buy_tax, sell_tax, launchpad_progress
+        DexScreener pairs → socials (twitter, telegram, discord, website)
+        """
+        addr = token_address.lower()
+        result = {
+            # 持有人
+            "holder_count": None,
+            # DS警告
+            "is_show_alert": False,
+            "flags": [],
+            # 税率（来自 mutil_window，补充 honeypot.is）
+            "buy_tax": None,
+            "sell_tax": None,
+            # Launchpad
+            "launchpad_progress": None,
+            "launchpad_status": None,
+            # 持仓分布
+            "top_10_holder_rate": None,
+            # Dev信息
+            "creator_created_count": None,
+            "creator_hold_rate": None,
+            # Bot Degen（专业机器人认可度）
+            "bot_degen_count": None,
+            # 社交媒体
+            "has_twitter": False,
+            "has_telegram": False,
+            "has_discord": False,
+            "has_website": False,
+        }
+
+        try:
+            session = await self._get_session()
+
+            async def _fetch_token_stat():
+                url = f"https://gmgn.ai/api/v1/token_stat/bsc/{addr}"
+                try:
+                    async with session.get(url, headers=GMGN_HEADERS,
+                                           timeout=aiohttp.ClientTimeout(total=5)) as resp:
+                        if resp.status == 200:
+                            data = await resp.json()
+                            logger.debug(f"[gmgn_raw] token_stat {addr[:10]} code={data.get('code')} keys={list((data.get('data') or {}).keys())[:10]} raw={str(data)[:300]}")
+                            if data.get("code") == 0:
+                                return data.get("data") or {}
+                        else:
+                            logger.debug(f"[gmgn_raw] token_stat {addr[:10]} http={resp.status}")
+                except Exception as e:
+                    logger.debug(f"[gmgn] token_stat 失败: {e}")
+                return {}
+
+            async def _fetch_mutil_window():
+                url = f"https://gmgn.ai/api/v1/mutil_window_token_security_launchpad/bsc/{addr}"
+                try:
+                    async with session.get(url, headers=GMGN_HEADERS,
+                                           timeout=aiohttp.ClientTimeout(total=5)) as resp:
+                        if resp.status == 200:
+                            data = await resp.json()
+                            if data.get("code") == 0:
+                                return data.get("data") or {}
+                except Exception as e:
+                    logger.debug(f"[gmgn] mutil_window 失败: {e}")
+                return {}
+
+            async def _fetch_dexscreener_socials():
+                url = f"https://api.dexscreener.com/tokens/v1/bsc/{addr}"
+                try:
+                    async with session.get(url, headers={"User-Agent": "Mozilla/5.0"},
+                                           timeout=aiohttp.ClientTimeout(total=5)) as resp:
+                        if resp.status == 200:
+                            data = await resp.json()
+                            pairs = data if isinstance(data, list) else data.get("pairs", [])
+                            if pairs:
+                                return pairs[0].get("info") or {}
+                except Exception as e:
+                    logger.debug(f"[dexscreener] socials 失败: {e}")
+                return {}
+
+            stat, mutil, dex_info = await asyncio.gather(
+                _fetch_token_stat(), _fetch_mutil_window(), _fetch_dexscreener_socials(),
+                return_exceptions=True
+            )
+
+            # ── 解析 token_stat ──
+            if isinstance(stat, dict) and stat:
+                result["holder_count"] = stat.get("holder_count")
+                result["bot_degen_count"] = stat.get("bot_degen_count")
+                result["creator_created_count"] = stat.get("creator_created_count")
+                try:
+                    result["creator_hold_rate"] = float(stat.get("creator_hold_rate") or 0)
+                except (ValueError, TypeError):
+                    pass
+                try:
+                    rate = stat.get("top_10_holder_rate")
+                    result["top_10_holder_rate"] = float(rate) if rate is not None else None
+                except (ValueError, TypeError):
+                    pass
+
+            # ── 解析 mutil_window ──
+            if isinstance(mutil, dict) and mutil:
+                sec = mutil.get("security") or {}
+                lp = mutil.get("launchpad") or {}
+                result["is_show_alert"] = bool(sec.get("is_show_alert", False))
+                result["flags"] = sec.get("flags") or []
+                try:
+                    result["buy_tax"] = float(sec.get("buy_tax") or 0)
+                    result["sell_tax"] = float(sec.get("sell_tax") or 0)
+                except (ValueError, TypeError):
+                    pass
+                try:
+                    result["launchpad_progress"] = float(lp.get("launchpad_progress") or 0)
+                    result["launchpad_status"] = lp.get("launchpad_status")
+                except (ValueError, TypeError):
+                    pass
+
+            # ── 解析 DexScreener socials ──
+            if isinstance(dex_info, dict) and dex_info:
+                for s in (dex_info.get("socials") or []):
+                    stype = (s.get("type") or "").lower()
+                    if stype == "twitter":
+                        result["has_twitter"] = True
+                    elif stype == "telegram":
+                        result["has_telegram"] = True
+                    elif stype == "discord":
+                        result["has_discord"] = True
+                result["has_website"] = bool(dex_info.get("websites"))
+
+        except Exception as e:
+            logger.warning(f"[four_meme] GMGN查询异常(跳过): {e}")
+
+        logger.info(
+            f"[gmgn] {addr[:10]} holders={result['holder_count']} "
+            f"bot_degen={result['bot_degen_count']} creator_total={result['creator_created_count']} "
+            f"creator_hold={result['creator_hold_rate']} top10={result['top_10_holder_rate']} "
+            f"alert={result['is_show_alert']} "
+            f"tw={result['has_twitter']} tg={result['has_telegram']} dc={result['has_discord']}"
+        )
+        return result
+
+    async def _analyze_four_meme(self, token_address: str, deployer_address: str) -> Dict[str, Any]:
+        """Four.Meme 专用分析逻辑（Flagent模型，2026-03-08更新）
+
+        基础分60，买入门槛75（config.yaml four_meme.min_score）
+
+        硬拒绝：DS警告 / 貔貅 / 持有人<20 / Dev发币>=50 / 模拟卖出失败 / 税率>15%
+        加分：持有人多(+5~15) / Bot Degen(+3~10) / 社交媒体(+5~8) / Dev持仓低(+4~8) / Top10分散(+4~8) / 零税(+5) / 模拟卖出成功(+10)
+        扣分：无社交(-15) / 持有人少(-5~15) / Dev发币多(-10) / Top10集中(-10~20) / Dev持仓高(-8)
         """
         start_time = time.time()
         token_address = token_address.lower()
         deployer_address = (deployer_address or "").lower()
-        FOUR_MEME_CONTRACT = "0x5c952063c7fc8610ffdb798152d69f0b9550762b"
 
         logger.info(f"[four_meme] 开始分析: {token_address[:10]}...")
 
         result = {
             "token_address": token_address,
-            "final_score": 75,
+            "final_score": 60,
             "decision": "reject",
             "risk_items": [],
             "bonus_items": [],
@@ -847,158 +1106,222 @@ class SecurityChecker:
             "platform": "four_meme"
         }
 
-        # 基础分 75，反映平台已做基础筛选
-        score = 75
+        score = 60
         risk_items = []
         bonus_items = []
 
-        # ── 1. deployer 黑名单（硬拒绝）──
+        def _hard_reject(desc: str):
+            result["final_score"] = 0
+            result["decision"] = "reject"
+            result["risk_items"] = risk_items + [{"desc": desc, "score": -100}]
+            result["analysis_time"] = time.time() - start_time
+            logger.warning(f"[four_meme] 拒绝 {token_address[:10]}: {desc}")
+
+        # ── 1. Deployer 黑名单（硬拒绝）──
         if deployer_address:
             try:
                 bl_reason = await self.blacklist_manager.check_deployer(deployer_address)
                 if bl_reason:
-                    score = 0
-                    risk_items.append({"desc": f"Deployer 黑名单: {bl_reason}", "score": -100})
-                    logger.warning(f"[four_meme] Deployer 黑名单拒绝: {deployer_address[:10]}")
                     result["raw_data"]["blacklist"] = bl_reason
-                    result["final_score"] = 0
-                    result["decision"] = "reject"
-                    result["risk_items"] = risk_items
-                    result["analysis_time"] = time.time() - start_time
+                    _hard_reject(f"Deployer 黑名单: {bl_reason}")
                     return result
             except Exception as e:
                 logger.warning(f"[four_meme] 黑名单检查失败(跳过): {e}")
 
-        # ── 2. 貔貅检测（并行）──
-        honeypot_res = {}
-        goplus_res = {}
-        try:
-            honeypot_res, goplus_res = await asyncio.gather(
-                self.check_honeypot_is(token_address),
-                self.check_goplus(token_address),
-                return_exceptions=False
-            )
-        except Exception as e:
-            logger.warning(f"[four_meme] 貔貅/GoPlus 检测异常(跳过): {e}")
+        # ── 1b. Deployer 历史 rug 率（硬拒绝 + 自动黑名单）──
+        deployer_history = await self._check_deployer_history(deployer_address)
+        result["raw_data"]["deployer_history"] = deployer_history
+        if not deployer_history.get("passed", True):
+            reason = deployer_history.get("reason", "Deployer历史rug率过高")
+            # 自动将连续rug的Dev加入黑名单
+            if deployer_address:
+                try:
+                    await self.blacklist_manager.add_deployer(deployer_address, reason)
+                    logger.warning(f"[四meme] Dev已加入黑名单: {deployer_address[:10]}... 原因: {reason}")
+                except Exception as e:
+                    logger.debug(f"[四meme] 黑名单写入失败(跳过): {e}")
+            _hard_reject(reason)
+            return result
 
-        # Honeypot.is 确认貔貅 → 硬拒绝，score=0
+        # ── 2. 并行执行三项外部检测（GMGN + Honeypot.is + GoPlus）──
+        gmgn_task = self._check_gmgn_signals(token_address)
+        honeypot_task = self.check_honeypot_is(token_address)
+        goplus_task = self.check_goplus(token_address)
+
+        gmgn_res, honeypot_res, goplus_raw = await asyncio.gather(
+            gmgn_task, honeypot_task, goplus_task, return_exceptions=True
+        )
+        if isinstance(gmgn_res, Exception):
+            logger.warning(f"[four_meme] GMGN 检测异常(跳过): {gmgn_res}")
+            gmgn_res = {}
+        if isinstance(honeypot_res, Exception):
+            logger.warning(f"[four_meme] Honeypot.is 检测失败(跳过): {honeypot_res}")
+            honeypot_res = {}
+        if isinstance(goplus_raw, Exception):
+            logger.warning(f"[four_meme] GoPlus 检测失败(跳过): {goplus_raw}")
+            goplus_raw = {}
+
+        result["raw_data"]["gmgn"] = gmgn_res
+        result["raw_data"]["honeypot"] = honeypot_res
+        result["raw_data"]["goplus"] = goplus_raw
+
+        # ═══════════════════════════════════════════════════════
+        # ── 3. GMGN 硬拒绝条件 ──
+        # ═══════════════════════════════════════════════════════
+
+        # DS危险警告
+        if gmgn_res.get("is_show_alert"):
+            flags = gmgn_res.get("flags") or []
+            _hard_reject(f"GMGN危险警告(DS): {flags if flags else '未知风险'}")
+            return result
+
+        # 持有人极少（<20 = 极高风险）
+        holder_count = gmgn_res.get("holder_count")
+        if holder_count is not None and holder_count < 20:
+            _hard_reject(f"持有人不足20个({holder_count}人)，极高风险")
+            return result
+
+        # Dev发币总数过多（serial rugger）
+        creator_total = gmgn_res.get("creator_created_count")
+        if creator_total is not None and creator_total >= 50:
+            _hard_reject(f"Dev发币总数过多: {creator_total}个（>=50拒绝）")
+            return result
+
+        # ── 4. Honeypot.is 貔貅检测（硬拒绝）──
         if honeypot_res.get("isHoneypot"):
             issue = honeypot_res.get("honeypotResult", {}).get("issue", "未知原因")
-            score = 0
-            risk_items.append({"desc": f"Honeypot.is 确认貔貅: {issue}", "score": -100})
-            logger.warning(f"[four_meme] 确认貔貅: {token_address[:10]} issue={issue}")
-            result["raw_data"]["honeypot"] = honeypot_res
-            result["final_score"] = 0
-            result["decision"] = "reject"
-            result["risk_items"] = risk_items
-            result["analysis_time"] = time.time() - start_time
+            _hard_reject(f"Honeypot.is 确认貔貅: {issue}")
             return result
 
-        # GoPlus 确认貔貅 → 硬拒绝，score=0
-        if goplus_res and int(goplus_res.get("is_honeypot", 0)) == 1:
-            score = 0
-            risk_items.append({"desc": "GoPlus 确认貔貅", "score": -100})
-            logger.warning(f"[four_meme] GoPlus 确认貔貅: {token_address[:10]}")
-            result["raw_data"]["goplus"] = goplus_res
-            result["final_score"] = 0
-            result["decision"] = "reject"
-            result["risk_items"] = risk_items
-            result["analysis_time"] = time.time() - start_time
-            return result
+        # ── 5. 模拟卖出（硬拒绝或加分）──
+        if honeypot_res:
+            if not honeypot_res.get("simulationSuccess", True):
+                _hard_reject("模拟卖出失败，无法验证可卖出性")
+                return result
+            score += 10
+            bonus_items.append({"desc": "模拟卖出成功", "score": +10})
 
-        result["raw_data"]["honeypot"] = honeypot_res
-        result["raw_data"]["goplus"] = goplus_res
-
-        # ── 2b. simulationSuccess=False → 无法验证卖出，硬拒绝 ──
-        if honeypot_res and not honeypot_res.get("simulationSuccess", True):
-            score = 0
-            risk_items.append({"desc": "Honeypot.is 模拟卖出失败（无法验证可卖出性）", "score": -100})
-            logger.warning(f"[four_meme] simulationSuccess=False 拒绝: {token_address[:10]}")
-            result["final_score"] = 0
-            result["decision"] = "reject"
-            result["risk_items"] = risk_items
-            result["analysis_time"] = time.time() - start_time
-            return result
-
-        # ── 2c. 两个API均无响应（新代币未被索引）→ 扣20分 ──
-        if not honeypot_res and not goplus_res:
-            score -= 20
-            risk_items.append({"desc": "Honeypot.is/GoPlus 均无响应，代币未被API索引", "score": -20})
-            logger.warning(f"[four_meme] 两个貔貅API均无响应，降低评分20分: {token_address[:10]}")
-
-        # ── 2d. GoPlus cannot_sell_all → 硬拒绝 ──
-        if goplus_res and goplus_res.get("cannot_sell_all") == "1":
-            score = 0
-            risk_items.append({"desc": "GoPlus: 无法卖出全部代币（貔貅特征）", "score": -100})
-            logger.warning(f"[four_meme] GoPlus cannot_sell_all 拒绝: {token_address[:10]}")
-            result["final_score"] = 0
-            result["decision"] = "reject"
-            result["risk_items"] = risk_items
-            result["analysis_time"] = time.time() - start_time
-            return result
-
-        # ── 3. 税率检测（GoPlus 或 Honeypot.is）──
+        # ── 6. 税率检测 ──
+        # 优先使用 honeypot.is 模拟值，fallback 到 GMGN mutil_window 的静态值
         try:
-            # GoPlus tax (decimal format: 0.05 = 5%)
-            buy_tax = float(goplus_res.get("buy_tax", 0) or 0) * 100
-            sell_tax = float(goplus_res.get("sell_tax", 0) or 0) * 100
-
-            # Fallback to Honeypot.is simulation
-            if buy_tax == 0 and sell_tax == 0 and honeypot_res:
-                sim = honeypot_res.get("simulationResult", {})
-                buy_tax = float(sim.get("buyTax", 0) or 0)
-                sell_tax = float(sim.get("sellTax", 0) or 0)
-
-            if buy_tax > 20 or sell_tax > 20:
-                deduct = -30
-                score += deduct
-                risk_items.append({"desc": f"税率过高 (买:{buy_tax:.1f}% 卖:{sell_tax:.1f}%)", "score": deduct})
-            elif buy_tax > 10 or sell_tax > 10:
-                deduct = -15
-                score += deduct
-                risk_items.append({"desc": f"税率偏高 (买:{buy_tax:.1f}% 卖:{sell_tax:.1f}%)", "score": deduct})
+            sim = honeypot_res.get("simulationResult", {}) if honeypot_res else {}
+            buy_tax = float(sim.get("buyTax") or gmgn_res.get("buy_tax") or 0)
+            sell_tax = float(sim.get("sellTax") or gmgn_res.get("sell_tax") or 0)
+            if sell_tax > 15:
+                _hard_reject(f"卖出税过高: {sell_tax:.1f}%（>15%拒绝）")
+                return result
+            elif sell_tax > 5:
+                score -= 10
+                risk_items.append({"desc": f"卖出税偏高: {sell_tax:.1f}%", "score": -10})
+            elif buy_tax <= 1 and sell_tax <= 1:
+                score += 5
+                bonus_items.append({"desc": "零税率", "score": +5})
         except Exception as e:
             logger.warning(f"[four_meme] 税率解析失败(跳过): {e}")
 
-        # ── 4. 持仓集中度（排除平台合约地址）──
-        try:
-            holders_data = await self.analyze_token_holders(
-                token_address, deployer_address,
-                pair_address=FOUR_MEME_CONTRACT  # 排除 bonding curve 合约
-            )
-            if holders_data:
-                max_share = holders_data.get("max_single_share", 0)
-                top_5 = holders_data.get("top_5_share", 0)
-                # 新币早期单一持仓 >15% 才算风险（宽松于普通代币的10%）
-                if max_share > 15:
-                    deduct = -20
-                    score += deduct
-                    risk_items.append({"desc": f"单一巨鲸持仓 {max_share:.1f}%", "score": deduct})
-                if top_5 > 50:
-                    deduct = -10
-                    score += deduct
-                    risk_items.append({"desc": f"前5持仓集中 {top_5:.1f}%", "score": deduct})
-                result["raw_data"]["holders"] = {"max_single_share": max_share, "top_5_share": top_5}
-        except Exception as e:
-            logger.warning(f"[four_meme] 持仓分析失败(跳过): {e}")
+        # ── 7. GoPlus 貔貅（硬拒绝）──
+        if goplus_raw:
+            if int(goplus_raw.get("is_honeypot", 0)) == 1:
+                _hard_reject("GoPlus 确认貔貅")
+                return result
+            if goplus_raw.get("cannot_sell_all") == "1":
+                _hard_reject("GoPlus: 无法卖出全部代币（貔貅特征）")
+                return result
 
-        # ── 5. 加分项：社交媒体 ──
-        try:
-            # four.meme 合约基本都未开源，跳过 BscScan 获取，直接检查 GoPlus 里的信息
-            # 如果 GoPlus 返回了 token 信息说明已有基础数据
-            if goplus_res.get("token_name") or goplus_res.get("token_symbol"):
+        # ═══════════════════════════════════════════════════════
+        # ── 8. GMGN 综合评分（Flagent模型）──
+        # ═══════════════════════════════════════════════════════
+
+        # 8a. 持有人数量
+        if holder_count is not None:
+            if holder_count >= 100:
+                score += 15
+                bonus_items.append({"desc": f"持有人多: {holder_count}人(>=100)", "score": +15})
+            elif holder_count >= 50:
+                score += 10
+                bonus_items.append({"desc": f"持有人较多: {holder_count}人(>=50)", "score": +10})
+            elif holder_count >= 30:
                 score += 5
-                bonus_items.append({"desc": "GoPlus 已收录代币信息", "score": +5})
-        except Exception as e:
-            logger.warning(f"[four_meme] 加分项检查失败(跳过): {e}")
+                bonus_items.append({"desc": f"持有人尚可: {holder_count}人(>=30)", "score": +5})
+            else:  # 20-29
+                score -= 5
+                risk_items.append({"desc": f"持有人偏少: {holder_count}人(<30)", "score": -5})
 
-        # ── 6. 评分区间限制 ──
+        # 8b. Bot Degen（专业机器人认可度）
+        bot_degen = gmgn_res.get("bot_degen_count")
+        if bot_degen is not None:
+            if bot_degen >= 100:
+                score += 10
+                bonus_items.append({"desc": f"Bot Degen高认可({bot_degen})", "score": +10})
+            elif bot_degen >= 50:
+                score += 7
+                bonus_items.append({"desc": f"Bot Degen认可({bot_degen})", "score": +7})
+            elif bot_degen >= 20:
+                score += 3
+                bonus_items.append({"desc": f"Bot Degen少量认可({bot_degen})", "score": +3})
+
+        # 8c. 社交媒体
+        has_social = gmgn_res.get("has_twitter") or gmgn_res.get("has_telegram") or gmgn_res.get("has_discord")
+        if gmgn_res.get("has_twitter"):
+            score += 8
+            bonus_items.append({"desc": "有Twitter", "score": +8})
+        if gmgn_res.get("has_telegram"):
+            score += 5
+            bonus_items.append({"desc": "有Telegram", "score": +5})
+        if gmgn_res.get("has_discord"):
+            score += 5
+            bonus_items.append({"desc": "有Discord", "score": +5})
+        if not has_social:
+            score -= 15
+            risk_items.append({"desc": "无任何社交媒体", "score": -15})
+
+        # 8d. Dev持仓比例
+        creator_hold = gmgn_res.get("creator_hold_rate")
+        if creator_hold is not None:
+            if creator_hold < 0.02:
+                score += 8
+                bonus_items.append({"desc": f"Dev持仓极低({creator_hold*100:.1f}%<2%)", "score": +8})
+            elif creator_hold < 0.05:
+                score += 4
+                bonus_items.append({"desc": f"Dev持仓低({creator_hold*100:.1f}%<5%)", "score": +4})
+            elif creator_hold > 0.10:
+                score -= 8
+                risk_items.append({"desc": f"Dev持仓高({creator_hold*100:.1f}%>10%)", "score": -8})
+
+        # 8e. Top10集中度
+        top10 = gmgn_res.get("top_10_holder_rate")
+        if top10 is not None:
+            top10_pct = top10 * 100 if top10 <= 1.0 else top10
+            if top10_pct < 20:
+                score += 8
+                bonus_items.append({"desc": f"Top10集中度低({top10_pct:.1f}%<20%)", "score": +8})
+            elif top10_pct < 30:
+                score += 4
+                bonus_items.append({"desc": f"Top10集中度适中({top10_pct:.1f}%<30%)", "score": +4})
+            elif top10_pct > 60:
+                score -= 20
+                risk_items.append({"desc": f"Top10严重集中({top10_pct:.1f}%>60%)", "score": -20})
+            elif top10_pct > 40:
+                score -= 10
+                risk_items.append({"desc": f"Top10集中({top10_pct:.1f}%>40%)", "score": -10})
+
+        # 8f. Dev发币总数（适量加分，过多已在硬拒绝处理）
+        if creator_total is not None:
+            if creator_total > 20:
+                score -= 10
+                risk_items.append({"desc": f"Dev发币较多({creator_total}个>20)", "score": -10})
+            elif creator_total <= 10:
+                score += 5
+                bonus_items.append({"desc": f"Dev发币适量({creator_total}个)", "score": +5})
+
+        # ── 9. 评分区间限制 ──
         score = max(0, min(100, score))
 
-        # ── 7. 决策 ──
-        if score >= 75:
+        # ── 10. 决策（从config读门槛，默认75）──
+        min_score = 75  # 与 config.yaml four_meme.min_score 一致
+        if score >= min_score:
             decision = "buy"
-        elif score >= 60:
+        elif score >= min_score - 10:
             decision = "half_buy"
         else:
             decision = "reject"
@@ -1010,7 +1333,8 @@ class SecurityChecker:
         result["analysis_time"] = time.time() - start_time
 
         logger.info(f"[four_meme] 分析完成: {token_address[:10]}... Score={score} Decision={decision}"
-                    + (f" 风险: {[r['desc'] for r in risk_items]}" if risk_items else ""))
+                    + (f" 风险: {[r['desc'] for r in risk_items]}" if risk_items else "")
+                    + (f" 加分: {[b['desc'] for b in bonus_items]}" if bonus_items else ""))
         return result
 
     async def analyze(self, token_address: str, deployer_address: str, pair_address: str = None, initial_state: Dict[str, Any] = None, platform: str = None) -> Dict[str, Any]:

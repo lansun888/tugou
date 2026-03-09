@@ -12,15 +12,14 @@ const extractDetails = (raw = {}) => {
   const simulation = raw.simulation || {};
   const holders = raw.holders || {};
   const contract = raw.contract || {};
+  const social = raw.social || {};
 
-  // is_honeypot
   const isHoneypot =
     simulation.is_honeypot === true ||
     goplus.is_honeypot === '1' ||
     honeypot.isHoneypot === true ||
     false;
 
-  // buy_tax: goplus 存的是 0~1 小数，需 *100；simulation 存的已是百分比
   let buyTax = null;
   if (goplus.buy_tax != null) buyTax = parseFloat(goplus.buy_tax) * 100;
   else if (simulation.buy_tax != null) buyTax = parseFloat(simulation.buy_tax);
@@ -31,19 +30,15 @@ const extractDetails = (raw = {}) => {
   else if (simulation.sell_tax != null) sellTax = parseFloat(simulation.sell_tax);
   else if (honeypot.simulationResult?.sellTax != null) sellTax = parseFloat(honeypot.simulationResult.sellTax);
 
-  // holder_concentration: top_5_share 来自 holders
   const holderConcentration = holders.top_5_share != null ? parseFloat(holders.top_5_share) : null;
-
-  // is_open_source
   const isOpenSource = !!contract.SourceCode || goplus.is_open_source === '1';
-
-  // is_renounced
   const isRenounced = goplus.owner_address === '0x0000000000000000000000000000000000000000';
-
-  // lp_locked
   const lpLocked = holders.lp_locked === true || goplus.lp_locked === '1';
+  const holderCount = raw.holder_count != null ? raw.holder_count : null;
+  const creatorPercent = raw.creator_percent != null ? parseFloat(raw.creator_percent) : null;
+  const hasSocial = !!(social.twitter || social.telegram || social.website);
 
-  return { isHoneypot, buyTax, sellTax, holderConcentration, isOpenSource, isRenounced, lpLocked };
+  return { isHoneypot, buyTax, sellTax, holderConcentration, isOpenSource, isRenounced, lpLocked, holderCount, creatorPercent, hasSocial };
 };
 
 // 纯文字颜色，无背景色块
@@ -101,6 +96,9 @@ const ScoreChip = ({ score, details = {} }) => {
     { label: '买税', value: flat.buyTax, type: 'pct' },
     { label: '卖税', value: flat.sellTax, type: 'pct' },
     { label: '前5持仓', value: flat.holderConcentration, type: 'pct' },
+    ...(flat.holderCount != null ? [{ label: '持有人', value: `${flat.holderCount}人`, type: 'text', warn: flat.holderCount < 10 }] : []),
+    ...(flat.creatorPercent != null ? [{ label: 'Dev持仓', value: flat.creatorPercent, type: 'pct' }] : []),
+    ...(flat.hasSocial != null ? [{ label: '社交媒体', value: flat.hasSocial, type: 'bool', good: true }] : []),
   ];
 
   return (
@@ -115,9 +113,12 @@ const ScoreChip = ({ score, details = {} }) => {
         <div className="bg-white border border-gray-200 rounded-lg shadow-xl p-3 text-xs">
           <div className="font-semibold text-gray-700 mb-2 pb-1 border-b border-gray-100">安全评分明细</div>
           <div className="space-y-1.5">
-            {dims.map(({ label, value, type, good }) => {
+            {dims.map(({ label, value, type, good, warn }) => {
               let display, dotColor;
-              if (type === 'pct') {
+              if (type === 'text') {
+                display = value;
+                dotColor = warn ? 'bg-orange-400' : 'bg-gray-400';
+              } else if (type === 'pct') {
                 display = value != null ? `${value.toFixed(1)}%` : '未知';
                 dotColor = value != null ? 'bg-blue-400' : 'bg-gray-300';
               } else {

@@ -1,9 +1,11 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Card, Title, Text, Badge, Select, SelectItem, Metric, TextInput } from '@tremor/react';
 import api from '../utils/api';
 import { formatNumber, formatTimeAgo, formatPrice } from '../utils/formatters';
 import { ExternalLinkIcon, ChevronDownIcon, ChevronRightIcon, SearchIcon } from 'lucide-react';
 import GmgnLink from '../components/common/GmgnLink';
+
+const PAGE_SIZE = 100;
 
 const parseDate = (value) => {
   if (value === undefined || value === null || value === '') return null;
@@ -44,7 +46,6 @@ const normalizeAmount = (value) => {
 };
 
 const DELAYED_HONEYPOT_REASONS = new Set(['liq_drain_2min', 'no_momentum_2min']);
-
 const isDelayedHoneypot = (reason) => DELAYED_HONEYPOT_REASONS.has(reason);
 
 const normalizeReason = (reason) => {
@@ -91,9 +92,7 @@ const formatPnl = (pnlBnb, pnlPercent) => {
 };
 
 const formatGroupPnl = (group) => {
-  if (group.totalPnlBnb === 0 && group.totalSellBnb === 0) {
-    return '持仓中';
-  }
+  if (group.totalPnlBnb === 0 && group.totalSellBnb === 0) return '持仓中';
   const sign = group.totalPnlBnb >= 0 ? '+' : '';
   const percentText = group.pnlPercent !== null ? ` (${group.pnlPercent >= 0 ? '+' : ''}${formatNumber(group.pnlPercent, 2)}%)` : '';
   return `${sign}${formatNumber(group.totalPnlBnb, 4)} BNB${percentText}`;
@@ -103,18 +102,14 @@ const formatCost = (trade) => {
   if ((trade.slippage_pct === undefined || trade.slippage_pct === null) && (trade.gas_cost_bnb === undefined || trade.gas_cost_bnb === null)) {
     return <span className="text-gray-400">--</span>;
   }
-  
   const slippagePct = trade.slippage_pct || 0;
   const gasCost = trade.gas_cost_bnb || 0;
-  
   return (
     <div className="flex flex-col items-end text-xs">
       <span className={slippagePct > 5 ? "text-rose-500 font-bold" : "text-gray-600"}>
         滑: {formatNumber(slippagePct, 2)}%
       </span>
-      <span className="text-gray-400">
-        Gas: {formatNumber(gasCost, 5)}
-      </span>
+      <span className="text-gray-400">Gas: {formatNumber(gasCost, 5)}</span>
     </div>
   );
 };
@@ -124,13 +119,23 @@ const isRealHash = (hash) => typeof hash === 'string' && hash.startsWith('0x') &
 const Trades = () => {
   const [trades, setTrades] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(false);
+  const [totalCount, setTotalCount] = useState(0);
+
   const [filterType, setFilterType] = useState('all');
-  const [filterPnl, setFilterPnl] = useState('all');      // all | profit | loss
-  const [filterTime, setFilterTime] = useState('all');    // all | today | 7d | 30d
+  const [filterPnl, setFilterPnl] = useState('all');
+  const [filterTime, setFilterTime] = useState('7d');   // 默认近7天
   const [searchToken, setSearchToken] = useState('');
   const [expandedGroups, setExpandedGroups] = useState({});
   const [todayStats, setTodayStats] = useState(null);
 
+  const searchTimerRef = useRef(null);
+  // 保存当前"已发送给API"的搜索词，避免闭包问题
+  const committedSearchRef = useRef('');
+
+  // ─── 今日统计（独立轮询） ───
   const fetchTodayStats = useCallback(async () => {
     try {
       const res = await api.get('/status');
@@ -142,52 +147,81 @@ const Trades = () => {
           winRate: res.win_rate || 0
         });
       }
-    } catch (error) {
-      console.error('Failed to fetch stats:', error);
-    }
+    } catch {}
   }, []);
 
   useEffect(() => {
     fetchTodayStats();
-    const interval = setInterval(fetchTodayStats, 10000);
-    return () => clearInterval(interval);
+    const iv = setInterval(fetchTodayStats, 10000);
+    return () => clearInterval(iv);
   }, [fetchTodayStats]);
 
-  const fetchTrades = useCallback(async () => {
-    setLoading(true);
+  // ─── 核心 fetch（支持追加模式） ───
+  const fetchTrades = useCallback(async ({ targetPage = 1, append = false, search = undefined, type = undefined, timeRange = undefined } = {}) => {
+    const actualSearch = search !== undefined ? search : committedSearchRef.current;
+    const actualType = type !== undefined ? type : filterType;
+    const actualTimeRange = timeRange !== undefined ? timeRange : filterTime;
+
+    if (append) {
+      setLoadingMore(true);
+    } else {
+      setLoading(true);
+    }
+
     try {
-      const response = await api.get('/trades', {
-        params: {
-          page: 1,
-          limit: 500,
-          type: filterType !== 'all' ? filterType : undefined
-        }
-      });
-      if (response && Array.isArray(response)) {
-        setTrades(response);
-      } else {
-        setTrades([]);
-      }
+      const params = { page: targetPage, limit: PAGE_SIZE };
+      if (actualType !== 'all') params.type = actualType;
+      if (actualTimeRange !== 'all') params.time_range = actualTimeRange;
+      if (actualSearch) params.token_search = actualSearch;
+
+      const response = await api.get('/trades', { params });
+
+      const items = response?.items ?? (Array.isArray(response) ? response : []);
+      const total = response?.total ?? items.length;
+      const more = response?.has_more ?? false;
+
+      setTrades(prev => append ? [...prev, ...items] : items);
+      setTotalCount(total);
+      setHasMore(more);
+      setPage(targetPage);
     } catch (error) {
       console.error('Failed to fetch trades:', error);
     } finally {
       setLoading(false);
+      setLoadingMore(false);
     }
-  }, [filterType]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filterType, filterTime]);
 
+  // ─── 过滤器变化 → 重置到第1页 ───
   useEffect(() => {
-    fetchTrades();
-  }, [fetchTrades]);
+    fetchTrades({ targetPage: 1, append: false });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filterType, filterTime]);
 
+  // ─── 搜索输入（防抖300ms，服务端过滤） ───
+  const handleSearchChange = (e) => {
+    const val = e.target.value;
+    setSearchToken(val);
+    clearTimeout(searchTimerRef.current);
+    searchTimerRef.current = setTimeout(() => {
+      committedSearchRef.current = val;
+      fetchTrades({ targetPage: 1, append: false, search: val });
+    }, 300);
+  };
+
+  // ─── 加载更多 ───
+  const handleLoadMore = () => {
+    fetchTrades({ targetPage: page + 1, append: true });
+  };
+
+  // ─── 格式化每条交易 ───
   const normalizedTrades = useMemo(() => {
     return (trades || []).map((trade) => {
       const action = (trade.action || '').toLowerCase();
-      const amountTokenRaw = trade.amount_token ?? trade.amount;
-      const amountBnbRaw = trade.amount_bnb;
-      const priceBnbRaw = trade.price_bnb ?? trade.price;
-      const amountToken = normalizeAmount(amountTokenRaw);
-      let amountBnb = normalizeAmount(amountBnbRaw);
-      let priceBnb = normalizeAmount(priceBnbRaw);
+      const amountToken = normalizeAmount(trade.amount_token ?? trade.amount);
+      let amountBnb = normalizeAmount(trade.amount_bnb);
+      let priceBnb = normalizeAmount(trade.price_bnb ?? trade.price);
       if ((amountBnb === null || amountBnb === undefined) && amountToken !== null && priceBnb !== null) {
         amountBnb = amountToken * priceBnb;
       }
@@ -195,12 +229,7 @@ const Trades = () => {
         priceBnb = amountBnb / amountToken;
       }
       const createdAt = trade.created_at ?? trade.timestamp ?? trade.time;
-      const createdAtText = formatDateTime(createdAt);
-      const createdAtRelative = formatTimeAgo(createdAt);
       const parsedDate = parseDate(createdAt);
-      const tradeType = trade.trade_type || 'live';
-      const pnlBnb = toNumber(trade.pnl_bnb);
-      const pnlPercentage = toNumber(trade.pnl_percentage);
       return {
         ...trade,
         action,
@@ -208,30 +237,21 @@ const Trades = () => {
         amount_bnb: amountBnb,
         price_bnb: priceBnb,
         created_at: createdAt,
-        created_at_text: createdAtText,
-        created_at_relative: createdAtRelative,
+        created_at_text: formatDateTime(createdAt),
+        created_at_relative: formatTimeAgo(createdAt),
         _ts: parsedDate ? parsedDate.getTime() : 0,
-        trade_type: tradeType,
-        pnl_bnb: pnlBnb,
-        pnl_percentage: pnlPercentage,
+        trade_type: trade.trade_type || 'live',
+        pnl_bnb: toNumber(trade.pnl_bnb),
+        pnl_percentage: toNumber(trade.pnl_percentage),
         token_symbol: trade.token_symbol || trade.token_name || 'Unknown'
       };
     });
   }, [trades]);
 
-  // Time range filter helper
-  const timeFilteredTrades = useMemo(() => {
-    const now = Date.now();
-    const cutoffs = { today: new Date().setHours(0,0,0,0), '7d': now - 7*86400_000, '30d': now - 30*86400_000 };
-    return normalizedTrades.filter(trade => {
-      if (filterTime !== 'all' && trade._ts < (cutoffs[filterTime] || 0)) return false;
-      return true;
-    });
-  }, [normalizedTrades, filterTime]);
-
+  // ─── 按 token 分组 + 客户端 PnL 过滤 ───
   const groupedTrades = useMemo(() => {
     const map = new Map();
-    timeFilteredTrades.forEach((trade) => {
+    normalizedTrades.forEach((trade) => {
       const key = trade.token_address || trade.token_symbol || 'unknown';
       if (!map.has(key)) {
         map.set(key, {
@@ -247,15 +267,12 @@ const Trades = () => {
 
     const groups = Array.from(map.values()).map((group) => {
       const sorted = [...group.trades].sort((a, b) => b._ts - a._ts);
-      const buys = sorted.filter((t) => t.action === 'buy');
-      const sells = sorted.filter((t) => t.action === 'sell');
+      const buys = sorted.filter(t => t.action === 'buy');
+      const sells = sorted.filter(t => t.action === 'sell');
       const totalBuyBnb = buys.reduce((acc, t) => acc + (t.amount_bnb || 0), 0);
       const totalSellBnb = sells.reduce((acc, t) => acc + (t.amount_bnb || 0), 0);
       const totalPnlBnb = sells.reduce((acc, t) => acc + (t.pnl_bnb || 0), 0);
       const pnlPercent = totalBuyBnb > 0 ? (totalPnlBnb / totalBuyBnb) * 100 : null;
-      const latestTs = sorted.length > 0 ? sorted[0]._ts : 0;
-      const hasDelayedHoneypot = sells.some(t => isDelayedHoneypot(t.close_reason));
-      const isFourMeme = sorted.some(t => t.dex_name === 'four_meme');
       return {
         ...group,
         trades: sorted,
@@ -263,77 +280,35 @@ const Trades = () => {
         totalSellBnb,
         totalPnlBnb,
         pnlPercent,
-        latestTs,
-        hasDelayedHoneypot,
-        isFourMeme
+        latestTs: sorted[0]?._ts ?? 0,
+        hasDelayedHoneypot: sells.some(t => isDelayedHoneypot(t.close_reason)),
+        isFourMeme: sorted.some(t => t.dex_name === 'four_meme')
       };
     });
 
-    // Apply token search filter
-    const searched = searchToken.trim().toLowerCase();
-    const filtered = groups.filter(g => {
-      if (searched && !g.token_symbol?.toLowerCase().includes(searched) &&
-          !g.token_name?.toLowerCase().includes(searched) &&
-          !g.token_address?.toLowerCase().includes(searched)) return false;
-      // PnL filter on group level
-      if (filterPnl === 'profit' && g.totalPnlBnb <= 0 && g.totalSellBnb > 0) return false;
-      if (filterPnl === 'loss' && g.totalPnlBnb >= 0 && g.totalSellBnb > 0) return false;
-      return true;
-    });
-
-    return filtered.sort((a, b) => b.latestTs - a.latestTs);
-  }, [timeFilteredTrades, searchToken, filterPnl]);
-
-  const summary = useMemo(() => {
-    const todayKey = formatDateTime(new Date()).slice(0, 10);
-    let totalBuy = 0;
-    let totalSell = 0;
-    let totalPnl = 0;
-    let sellCount = 0;
-    let winCount = 0;
-    timeFilteredTrades.forEach((trade) => {
-      const dateKey = formatDateTime(trade.created_at).slice(0, 10);
-      if (dateKey !== todayKey) return;
-      if (trade.action === 'buy') {
-        totalBuy += trade.amount_bnb || 0;
-      }
-      if (trade.action === 'sell') {
-        totalSell += trade.amount_bnb || 0;
-        if (trade.status !== 'failed_rug') {
-            sellCount += 1;
-            const pnl = trade.pnl_bnb || 0;
-            totalPnl += pnl;
-            if (pnl > 0) winCount += 1;
-        } else {
-            // Rug failed sell: 0 revenue, realized loss.
-            // PnL is negative (cost lost).
-            // But user asked to EXCLUDE from win rate statistics.
-            // So we don't increment sellCount.
-            // We still add PnL to totalPnl?
-            // "status='failed_rug' ... Not count in win rate"
-            // "totalPnl" logic in summary is local. The dashboard uses backend API.
-            // So I'll just skip sellCount increment.
-            const pnl = trade.pnl_bnb || 0;
-            totalPnl += pnl; 
-        }
-      }
-    });
-    const winRate = sellCount > 0 ? (winCount / sellCount) * 100 : 0;
-    return { totalBuy, totalSell, totalPnl, winRate };
-  }, [timeFilteredTrades]);
-
-  const handleFilterChange = (value) => {
-    setFilterType(value);
-  };
+    // 客户端 PnL 过滤（需要 group 级别的数据）
+    return groups
+      .filter(g => {
+        if (filterPnl === 'profit' && g.totalPnlBnb <= 0 && g.totalSellBnb > 0) return false;
+        if (filterPnl === 'loss' && g.totalPnlBnb >= 0 && g.totalSellBnb > 0) return false;
+        return true;
+      })
+      .sort((a, b) => b.latestTs - a.latestTs);
+  }, [normalizedTrades, filterPnl]);
 
   const getBscScanLink = (hash) => `https://bscscan.com/tx/${hash}`;
+
+  const hasActiveFilter = searchToken || filterType !== 'all' || filterTime !== '7d' || filterPnl !== 'all';
 
   return (
     <div className="p-6 space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <Title>交易记录</Title>
-          <Text>查看所有买入和卖出操作历史 · 共 {groupedTrades.length} 个币种</Text>
+          <Text>
+            共 {totalCount} 条记录 · 当前显示 {groupedTrades.length} 个币种
+            {filterTime !== 'all' && <span className="ml-1 text-indigo-500">({filterTime === 'today' ? '今天' : filterTime === '7d' ? '近7天' : '近30天'})</span>}
+          </Text>
         </div>
       </div>
 
@@ -343,11 +318,11 @@ const Trades = () => {
           icon={SearchIcon}
           placeholder="搜索币种名称/地址..."
           value={searchToken}
-          onChange={(e) => { setSearchToken(e.target.value); }}
+          onChange={handleSearchChange}
           className="w-56"
         />
         <div className="w-36">
-          <Select value={filterType} onValueChange={handleFilterChange}>
+          <Select value={filterType} onValueChange={(v) => { setFilterType(v); }}>
             <SelectItem value="all">全部类型</SelectItem>
             <SelectItem value="buy">买入</SelectItem>
             <SelectItem value="sell">卖出</SelectItem>
@@ -368,14 +343,21 @@ const Trades = () => {
             <SelectItem value="loss">仅亏损</SelectItem>
           </Select>
         </div>
-        {(searchToken || filterType !== 'all' || filterTime !== 'all' || filterPnl !== 'all') && (
+        {hasActiveFilter && (
           <button
-            onClick={() => { setSearchToken(''); setFilterType('all'); setFilterTime('all'); setFilterPnl('all'); }}
+            onClick={() => {
+              setSearchToken('');
+              setFilterType('all');
+              setFilterTime('7d');
+              setFilterPnl('all');
+              committedSearchRef.current = '';
+            }}
             className="text-xs text-indigo-600 hover:text-indigo-800 underline"
           >清除筛选</button>
         )}
       </div>
 
+      {/* 统计卡片 */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <Card>
           <Text>今日总买入</Text>
@@ -435,10 +417,10 @@ const Trades = () => {
                                   {expanded ? <ChevronDownIcon className="w-4 h-4 text-gray-500" /> : <ChevronRightIcon className="w-4 h-4 text-gray-500" />}
                                   <span className="font-semibold text-gray-900">{group.token_symbol}</span>
                                   {group.isFourMeme && (
-                                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-700 border border-purple-200" title="Four.meme Platform">4M</span>
+                                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-700 border border-purple-200">4M</span>
                                   )}
                                   {group.hasDelayedHoneypot && (
-                                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-purple-100 text-purple-700 border border-purple-200" title="该币在2分钟评估时被判定为延迟貔貅">🎭 延迟貔貅</span>
+                                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-purple-100 text-purple-700 border border-purple-200">🎭 延迟貔貅</span>
                                   )}
                                   {group.token_name && group.token_name !== group.token_symbol && (
                                     <span className="text-sm font-normal text-gray-500">({group.token_name})</span>
@@ -459,7 +441,7 @@ const Trades = () => {
                           {expanded && group.trades.map((trade) => {
                             const badge = getTypeBadge(trade);
                             const pnlDisplay = trade.action === 'sell'
-                              ? (trade.status === 'failed_rug' 
+                              ? (trade.status === 'failed_rug'
                                   ? { text: '💀已归零', className: 'text-gray-500 italic' }
                                   : formatPnl(trade.pnl_bnb, trade.pnl_percentage))
                               : {
@@ -495,20 +477,16 @@ const Trades = () => {
                                       {trade.trade_type === 'simulation' && <span className="ml-1 text-[10px] opacity-70">模拟</span>}
                                     </Badge>
                                     {trade.dex_name === 'four_meme' && (
-                                      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-700 border border-purple-200" title="Four.meme Platform">4M</span>
+                                      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-700 border border-purple-200">4M</span>
                                     )}
                                   </div>
                                 </td>
-                                <td className="py-3 px-4 text-right font-mono">
-                                  {formatNumber(trade.amount_token)}
-                                </td>
-                                <td className="py-3 px-4 text-right font-mono text-gray-600">
-                                  {formatPrice(trade.price_bnb)}
-                                </td>
+                                <td className="py-3 px-4 text-right font-mono">{formatNumber(trade.amount_token)}</td>
+                                <td className="py-3 px-4 text-right font-mono text-gray-600">{formatPrice(trade.price_bnb)}</td>
                                 <td className="py-3 px-4 text-right font-bold text-gray-900 font-mono">
                                   {trade.status === 'failed_rug' ? <span className="bg-gray-100 text-gray-500 px-1 rounded text-xs">0.000</span> : formatNumber(trade.amount_bnb, 4)}
                                 </td>
-                                <td className="py-3 px-4 text-right font-mono text-gray-600" title={`预期: ${formatNumber(trade.expected_amount)}\n实际: ${formatNumber(trade.actual_amount)}\n滑点损耗: ${formatNumber(trade.slippage_bnb, 5)} BNB\nGas Price: ${trade.gas_price_gwei} Gwei`}>
+                                <td className="py-3 px-4 text-right font-mono text-gray-600">
                                   {formatCost(trade)}
                                 </td>
                                 <td className={`py-3 px-4 text-right font-mono ${pnlDisplay.className}`}>
@@ -519,19 +497,13 @@ const Trades = () => {
                                 </td>
                                 <td className="py-3 px-4">
                                   {isRealHash(trade.tx_hash) ? (
-                                    <a
-                                      href={getBscScanLink(trade.tx_hash)}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="text-indigo-600 hover:text-indigo-800 flex items-center gap-1 text-xs"
-                                    >
+                                    <a href={getBscScanLink(trade.tx_hash)} target="_blank" rel="noopener noreferrer"
+                                      className="text-indigo-600 hover:text-indigo-800 flex items-center gap-1 text-xs">
                                       {trade.tx_hash.substring(0, 6)}...{trade.tx_hash.substring(trade.tx_hash.length - 4)}
                                       <ExternalLinkIcon className="w-3 h-3" />
                                     </a>
                                   ) : (trade.tx_hash && (trade.tx_hash.startsWith('SIM_') || trade.tx_hash.startsWith('simulated_'))) ? (
-                                     <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-500 border border-gray-200 cursor-default" title={trade.tx_hash}>
-                                       模拟
-                                     </span>
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-500 border border-gray-200 cursor-default">模拟</span>
                                   ) : (
                                     <span className="text-xs text-gray-400">--</span>
                                   )}
@@ -551,17 +523,27 @@ const Trades = () => {
                     })
                   ) : (
                     <tr>
-                      <td colSpan="11" className="text-center py-8 text-gray-500">
-                        暂无交易记录
-                      </td>
+                      <td colSpan="11" className="text-center py-8 text-gray-500">暂无交易记录</td>
                     </tr>
                   )}
                 </tbody>
               </table>
             </div>
 
-            <div className="flex justify-end items-center mt-4 pt-4 border-t border-gray-100">
-              <span className="text-sm text-gray-400">共 {trades.length} 条记录 · {groupedTrades.length} 个币种</span>
+            {/* 分页栏 */}
+            <div className="flex justify-between items-center mt-4 pt-4 border-t border-gray-100">
+              <span className="text-sm text-gray-400">
+                显示 {trades.length} / {totalCount} 条 · {groupedTrades.length} 个币种
+              </span>
+              {hasMore && (
+                <button
+                  onClick={handleLoadMore}
+                  disabled={loadingMore}
+                  className="px-4 py-2 text-sm bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg transition-colors disabled:opacity-50"
+                >
+                  {loadingMore ? '加载中...' : `加载更多 (剩余 ${totalCount - trades.length} 条)`}
+                </button>
+              )}
             </div>
           </>
         )}

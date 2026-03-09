@@ -36,6 +36,7 @@ class Position:
     last_update_time: float = 0.0 # Timestamp of last price update
     dex_name: str = None # DEX Name (pancakeswap_v2, four_meme, etc.)
     security_score: int = 0  # 安全评分（买入时记录）
+    deployer_address: str = ""  # 代币发布者地址
     
     # DexScreener Data
     volume_24h: float = 0.0
@@ -49,6 +50,7 @@ class Position:
     first_check_done: bool = False # Flag for 2-min quick assessment
     passed_honeypot_check: bool = False  # 延迟貔貅检测标记（2分钟时触发一次）
     has_real_price: bool = False  # 是否已获取过真实市场价（非买入估算价）
+    tp_50_done: bool = False
     tp_100_done: bool = False
     tp_200_done: bool = False
     tp_400_done: bool = False
@@ -57,7 +59,11 @@ class Position:
     highest_pnl: float = 0.0        # 历史最高盈利百分比
     liquidity_bnb: float = 0.0          # 最近一次流动性（BNB）
     initial_liquidity_bnb: float = 0.0  # 买入时初始流动性（用于2分钟评估）
-    
+
+    # Pregrad buy tracking (bought on bonding curve before graduation)
+    pregrad_buy: bool = False               # True = still waiting for graduation
+    pregrad_progress_at_buy: float = 0.0   # bonding curve progress % when bought
+
     def update_price(self, new_price: float):
         self.current_price = new_price
         self.last_update_time = time.time()
@@ -177,6 +183,18 @@ class PositionManager:
                     await db.execute(f"ALTER TABLE {self.positions_table} ADD COLUMN initial_liquidity_bnb REAL DEFAULT 0.0")
                 if "dex_name" not in columns:
                     await db.execute(f"ALTER TABLE {self.positions_table} ADD COLUMN dex_name TEXT")
+                if "close_reason" not in columns:
+                    await db.execute(f"ALTER TABLE {self.positions_table} ADD COLUMN close_reason TEXT")
+                if "closed_at" not in columns:
+                    await db.execute(f"ALTER TABLE {self.positions_table} ADD COLUMN closed_at TEXT")
+                if "hold_minutes" not in columns:
+                    await db.execute(f"ALTER TABLE {self.positions_table} ADD COLUMN hold_minutes INTEGER DEFAULT 0")
+                if "deployer_address" not in columns:
+                    await db.execute(f"ALTER TABLE {self.positions_table} ADD COLUMN deployer_address TEXT DEFAULT ''")
+                if "pregrad_buy" not in columns:
+                    await db.execute(f"ALTER TABLE {self.positions_table} ADD COLUMN pregrad_buy INTEGER DEFAULT 0")
+                if "pregrad_progress_at_buy" not in columns:
+                    await db.execute(f"ALTER TABLE {self.positions_table} ADD COLUMN pregrad_progress_at_buy REAL DEFAULT 0.0")
             except Exception as e:
                 logger.warning(f"Migration check failed, running legacy migration: {e}")
                 try:
@@ -230,7 +248,9 @@ class PositionManager:
                             current_price=row_dict.get('current_price', 0.0) or 0.0,
                             pnl_percentage=row_dict.get('pnl_percentage', 0.0) or 0.0,
                             initial_liquidity_bnb=row_dict.get('initial_liquidity_bnb', 0.0) or 0.0,
-                            dex_name=row_dict.get('dex_name')
+                            dex_name=row_dict.get('dex_name'),
+                            pregrad_buy=bool(row_dict.get('pregrad_buy', 0)),
+                            pregrad_progress_at_buy=float(row_dict.get('pregrad_progress_at_buy', 0.0) or 0.0),
                         )
                         # Recalculate values if needed
                         pos.current_value_bnb = pos.token_amount * pos.current_price
@@ -244,12 +264,15 @@ class PositionManager:
         except Exception as e:
             logger.error(f"恢复仓位失败: {e}")
 
-    async def add_position(self, token_address, token_name, buy_price, buy_amount_bnb, token_amount, buy_gas_price=0, dex_data=None, pair_address="", initial_liquidity_bnb=0.0, dex_name=None, security_score=0):
+    async def add_position(self, token_address, token_name, buy_price, buy_amount_bnb, token_amount, buy_gas_price=0, dex_data=None, pair_address="", initial_liquidity_bnb=0.0, dex_name=None, security_score=0, deployer_address="", pregrad_buy=False, pregrad_progress_at_buy=0.0):
         """添加新仓位"""
         # 每日风控检查
         if not self._check_daily_risk_allow_buy():
             logger.warning("触发每日风控，停止买入")
             return False
+
+        # 名称兜底：避免空名称写入DB
+        token_name = token_name or token_address[:8]
 
         pos = Position(
             token_address=token_address,
@@ -266,9 +289,17 @@ class PositionManager:
             initial_liquidity_bnb=initial_liquidity_bnb,
             liquidity_bnb=initial_liquidity_bnb,
             dex_name=dex_name,
-            security_score=security_score
+            security_score=security_score,
+            deployer_address=deployer_address or "",
+            pregrad_buy=pregrad_buy,
+            pregrad_progress_at_buy=pregrad_progress_at_buy,
         )
-        
+
+        # ===== Four.meme: 链上读取真实名称/符号（如果名称是地址兜底值）=====
+        if dex_name == 'four_meme':
+            real_name, real_symbol = await self._resolve_token_name(token_address, token_name)
+            pos.token_name = real_name
+
         # ===== Fix for Four.meme: Fetch pair address immediately =====
         if dex_name == 'four_meme' and not pair_address:
             try:
@@ -323,12 +354,13 @@ class PositionManager:
             async with aiosqlite.connect(self.db_path) as db:
                 await db.execute(f"""
                     INSERT OR REPLACE INTO {self.positions_table}
-                    (token_address, token_name, buy_price_bnb, buy_amount_bnb, token_amount, buy_time, highest_price, sold_portions, status, buy_gas_price, pair_address, current_price, pnl_percentage, initial_liquidity_bnb, dex_name, security_score)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (token_address, token_name, buy_price_bnb, buy_amount_bnb, token_amount, buy_time, highest_price, sold_portions, status, buy_gas_price, pair_address, current_price, pnl_percentage, initial_liquidity_bnb, dex_name, security_score, deployer_address, pregrad_buy, pregrad_progress_at_buy)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     pos.token_address, pos.token_name, pos.buy_price_bnb, pos.buy_amount_bnb,
                     pos.token_amount, pos.buy_time, pos.highest_price, json.dumps(pos.sold_portions), pos.status, pos.buy_gas_price,
-                    pos.pair_address, pos.current_price, pos.pnl_percentage, pos.initial_liquidity_bnb, pos.dex_name, pos.security_score
+                    pos.pair_address, pos.current_price, pos.pnl_percentage, pos.initial_liquidity_bnb, pos.dex_name, pos.security_score,
+                    pos.deployer_address, int(pos.pregrad_buy), pos.pregrad_progress_at_buy
                 ))
                 await db.commit()
         except Exception as e:
@@ -502,6 +534,38 @@ class PositionManager:
         if not pos or pos.status in ("sold", "closed"):
             return
 
+        # ===== Pregrad 阶段：代币尚在 bonding curve，等待毕业 =====
+        if pos.dex_name == 'four_meme' and pos.pregrad_buy:
+            holding_minutes = (time.time() - pos.buy_time) / 60
+            progress = await self._get_bonding_curve_progress(token_address)
+
+            if progress >= 100:
+                graduated = await self._check_graduation_and_get_pair(pos)
+                if not graduated:
+                    logger.warning(f"[pregrad] {pos.token_name} 进度100%但pair未建，下轮重试")
+                return  # 无论是否找到 pair，当轮结束；下轮走正常流程
+
+            buy_pct = pos.pregrad_progress_at_buy
+            if buy_pct > 0 and progress < buy_pct - 5:
+                logger.warning(
+                    f"[pregrad] {pos.token_name}: 进度退化 {buy_pct:.0f}%→{progress:.1f}%，止损"
+                )
+                await self._execute_sell(pos, 100, 'pregrad_regressed')
+                return
+
+            if holding_minutes > 20:
+                logger.warning(
+                    f"[pregrad] {pos.token_name}: {holding_minutes:.0f}min 未毕业（进度{progress:.1f}%），止损"
+                )
+                await self._execute_sell(pos, 100, 'pregrad_timeout')
+                return
+
+            logger.info(
+                f"[pregrad] {pos.token_name}: 进度={progress:.1f}% 持仓={holding_minutes:.1f}min "
+                f"买入时={buy_pct:.0f}% 等待毕业..."
+            )
+            # 仍在等待毕业，继续正常价格检查流程（快速止损保护）
+
         start_time = time.time()
 
         price = None
@@ -517,16 +581,18 @@ class PositionManager:
                 price_source = price_info.get('source', 'four_meme_onchain')
 
             if not price or price <= 0:
-                # 使用历史价格（最多600秒内有效）
-                STALE_PRICE_MAX_AGE = 600
+                # 使用历史价格 (DB恢复的持仓 last_update_time=0，直接用 current_price，不做时效检查)
                 last_price = pos.current_price
-                age = time.time() - pos.last_update_time if pos.last_update_time > 0 else float('inf')
-                if last_price > 0 and age < STALE_PRICE_MAX_AGE:
-                    logger.debug(f"{pos.token_name}: 使用历史价格 {last_price:.2e} BNB (陈旧 {age:.0f}s)")
+                if last_price > 0:
+                    age = time.time() - pos.last_update_time if pos.last_update_time > 0 else 0
+                    logger.info(f"[four_meme] {pos.token_name}: 链上价格获取失败，使用历史价格 "
+                                f"{last_price:.6e} BNB (陈旧 {age:.0f}s)")
+                    # 确保 has_real_price=True，防止 _check_strategies 中 2-min 检查阻断策略
+                    pos.has_real_price = True
                     await self._check_strategies(pos, last_price, pos.liquidity_bnb)
                 else:
                     pos.fetch_fail_count += 1
-                    logger.debug(f"{pos.token_name}: 价格获取失败且无可用历史价格，跳过")
+                    logger.warning(f"[four_meme] {pos.token_name}: 价格获取失败且无历史价格，跳过策略检查")
                 return
 
         # ===== 普通代币：优先DexScreener，失败降级链上 =====
@@ -557,7 +623,13 @@ class PositionManager:
                 return
 
         pos.fetch_fail_count = 0
-        logger.debug(f"{pos.token_name}: 价格={price:.4e} 来源={price_source}")
+        holding_mins = (time.time() - pos.buy_time) / 60 if pos.buy_time else 0
+        if pos.dex_name == 'four_meme':
+            logger.info(f"[four_meme] {pos.token_name}: 价格更新 "
+                        f"现价={price:.6e} BNB 买入={pos.buy_price_bnb:.6e} BNB "
+                        f"来源={price_source} 持仓={holding_mins:.1f}min")
+        else:
+            logger.debug(f"{pos.token_name}: 价格={price:.4e} 来源={price_source}")
         await self._update_position_price(pos, price, price_source, liquidity_bnb)
         await self._check_strategies(pos, price, liquidity_bnb)
         
@@ -712,11 +784,27 @@ class PositionManager:
         holding_minutes = (now - pos.buy_time) / 60
         pnl = pos.pnl_percentage
 
+        is_four_meme = (pos.dex_name == 'four_meme')
+        fm_strategy = self.executor.config.get('four_meme_strategy', {}) if is_four_meme else {}
+        fm_two_min  = fm_strategy.get('two_min_check', {})
+        fm_sl       = fm_strategy.get('stop_loss', {})
+        fm_trail    = fm_strategy.get('trailing_stop', {})
+        fm_tp       = fm_strategy.get('take_profit', [])
+
+        if is_four_meme:
+            logger.info(f"[策略检查] {pos.token_name}: pnl={pnl:.1f}% 持仓={holding_minutes:.1f}min "
+                        f"passed_hc={pos.passed_honeypot_check} has_real_price={pos.has_real_price}")
+
         # ===== 阶段一：0-2分钟保护期 =====
         if holding_minutes < 2:
             logger.debug(f"{pos.token_name}: 保护期 "
                         f"{holding_minutes:.1f}分钟 pnl={pnl:.1f}%")
-            if 0 < liquidity_bnb < 0.5:
+            if is_four_meme:
+                liq_rug_threshold = fm_two_min.get("liq_rug_threshold_bnb", 3)
+            else:
+                two_min_cfg = self.config.get("two_min_check", {})
+                liq_rug_threshold = two_min_cfg.get("liq_rug_threshold_bnb", 0.5)
+            if 0 < liquidity_bnb < liq_rug_threshold:
                 await self._execute_sell(pos, 100, 'rug_pull_confirmed')
                 return
             if pnl < -70:
@@ -726,9 +814,9 @@ class PositionManager:
 
         # ===== 阶段二：2分钟时，延迟貔貅检测 =====
         if not pos.passed_honeypot_check:
-            # 2分钟评估要求真实市场价（has_real_price=True）。
-            # 买入时的估算价（totalSupply推算）不代表市场行情，用它评估会导致误判。
-            if not pos.has_real_price:
+            # Four.meme：bonding curve 买入价是链上真实价，直接通过 has_real_price 检查
+            # 普通代币：买入时估算价不代表市场行情，需等 DexScreener/链上价格
+            if not pos.has_real_price and not is_four_meme:
                 logger.debug(f"{pos.token_name}: 2分钟评估延迟，尚未获取真实市场价")
                 # 不标记 passed_honeypot_check，下轮价格到位后再评估
                 return
@@ -742,88 +830,160 @@ class PositionManager:
                        f"pnl={pnl:.1f}% liq_init={init_liq:.2f} liq_now={liquidity_bnb:.2f} "
                        f"liq_chg={liq_change_pct:.1f}%")
 
-            # 情况一：流动性撤出 > 30% → 疑似貔貅，离场
-            if liq_change_pct < -30:
-                logger.info(f"{pos.token_name}: 2分钟流动性暴跌 liq_chg={liq_change_pct:.1f}%，离场")
+            if is_four_meme:
+                liq_drop_pct = fm_two_min.get("liq_drop_pct", 30)
+            else:
+                two_min_cfg = self.config.get("two_min_check", {})
+                liq_drop_pct = two_min_cfg.get("liq_drop_pct", 50)
+
+            # 流动性暴跌 > liq_drop_pct% → 疑似rug，离场
+            if liq_change_pct < -liq_drop_pct:
+                logger.info(f"{pos.token_name}: 2分钟流动性暴跌 liq_chg={liq_change_pct:.1f}%（阈值-{liq_drop_pct}%），离场")
                 await self._execute_sell(pos, 100, 'liq_drain_2min')
                 return
 
-            # 情况二：pnl < 20% 且 流动性增长 < 10% → 无热度，离场
-            # four_meme: init_liq=0（bonding curve 无初始流动性记录），跳过流动性维度，仅看 pnl
-            is_four_meme = (pos.dex_name == "four_meme")
-            if pnl < 20 and (liq_change_pct < 10 or is_four_meme and init_liq == 0):
-                if is_four_meme and init_liq == 0:
-                    # four_meme 无初始流动性基准，只靠 pnl 判断
-                    if pnl < 20:
-                        logger.info(f"{pos.token_name}: [four_meme] 2分钟pnl={pnl:.1f}%不足，离场")
-                        await self._execute_sell(pos, 100, 'no_momentum_2min')
-                        return
-                else:
-                    logger.info(f"{pos.token_name}: 2分钟无热度 "
-                               f"pnl={pnl:.1f}% liq_chg={liq_change_pct:.1f}%，离场")
-                    await self._execute_sell(pos, 100, 'no_momentum_2min')
-                    return
+            # ── 2分钟无交易活动检测（bonding curve上任何买卖都会改变价格）──
+            if is_four_meme and abs(pnl) < 0.5:
+                logger.warning(f"{pos.token_name}: 2分钟内价格零变动(pnl={pnl:.2f}%)，"
+                               f"bonding curve无交易活动，离场")
+                await self._execute_sell(pos, 100, 'no_activity_2min')
+                return
 
-            # 情况三：pnl >= 20% 或 流动性增长 >= 10% → 有热度，继续持有
-            logger.info(f"{pos.token_name}: 2分钟评估通过，继续持有")
+            logger.info(f"{pos.token_name}: 2分钟评估通过 pnl={pnl:.1f}% liq_chg={liq_change_pct:.1f}%，继续持有")
 
         # ===== 阶段三：正常止盈止损 =====
 
-        # 止盈检查
-        if pnl >= 900 and not pos.tp_900_done:
-            await self._execute_sell(pos, 15, 'tp_900')
-            pos.tp_900_done = True
-            return
-        if pnl >= 400 and not pos.tp_400_done:
-            await self._execute_sell(pos, 25, 'tp_400')
-            pos.tp_400_done = True
-            return
-        if pnl >= 200 and not pos.tp_200_done:
-            await self._execute_sell(pos, 25, 'tp_200')
-            pos.tp_200_done = True
-            return
-        if pnl >= 100 and not pos.tp_100_done:
-            await self._execute_sell(pos, 25, 'tp_100')
-            pos.tp_100_done = True
-            return
-
-        # 追踪止损线更新
-        if pnl >= 900:
-            pos.trailing_stop_pct = 700
-        elif pnl >= 400:
-            pos.trailing_stop_pct = 300
-        elif pnl >= 200:
-            pos.trailing_stop_pct = 150
-        elif pnl >= 100:
-            pos.trailing_stop_pct = 50
-
-        # 追踪止损检查
-        if pos.trailing_stop_pct > 0 and pnl <= pos.trailing_stop_pct:
-            await self._execute_sell(pos, 100, 'trailing_stop')
-            return
-
-        # 初始止损（2-30分钟内）
-        if holding_minutes <= 30 and pnl <= -35:
-            await self._execute_sell(pos, 100, 'initial_stop_loss')
-            return
-
-        # 回撤止损
-        if pos.highest_pnl > 0:
-            drawdown = pos.highest_pnl - pnl
-            if drawdown >= 40:
-                await self._execute_sell(pos, 100, 'drawdown_40')
+        # ── 止盈：阶梯卖出 ──
+        if is_four_meme and fm_tp:
+            # Four.meme 独立止盈阶梯（从高到低检查，先触发大涨档位）
+            flag_map = {
+                1.5: 'tp_50_done', 2.0: 'tp_100_done',
+                3.0: 'tp_200_done', 5.0: 'tp_400_done', 10.0: 'tp_900_done'
+            }
+            for tp_level in sorted(fm_tp, key=lambda x: x.get('multiplier', 1), reverse=True):
+                multiplier  = tp_level.get('multiplier', 1.0)
+                tp_pnl      = (multiplier - 1) * 100   # 1.5x→50%, 2x→100%, …
+                sell_ratio  = tp_level.get('sell_ratio', 25)
+                flag_attr   = flag_map.get(multiplier)
+                if flag_attr and pnl >= tp_pnl and not getattr(pos, flag_attr, False):
+                    await self._execute_sell(pos, sell_ratio, f'fm_tp_{int(tp_pnl)}')
+                    setattr(pos, flag_attr, True)
+                    return
+        else:
+            # 普通代币止盈（1.5x卖15%，2x卖20%，3x卖25%，5x卖25%，10x卖15%）
+            if pnl >= 900 and not pos.tp_900_done:
+                await self._execute_sell(pos, 15, 'tp_900')
+                pos.tp_900_done = True
+                return
+            if pnl >= 400 and not pos.tp_400_done:
+                await self._execute_sell(pos, 25, 'tp_400')
+                pos.tp_400_done = True
+                return
+            if pnl >= 200 and not pos.tp_200_done:
+                await self._execute_sell(pos, 25, 'tp_200')
+                pos.tp_200_done = True
+                return
+            if pnl >= 100 and not pos.tp_100_done:
+                await self._execute_sell(pos, 20, 'tp_100')
+                pos.tp_100_done = True
+                return
+            if pnl >= 50 and not pos.tp_50_done:
+                await self._execute_sell(pos, 15, 'tp_50')
+                pos.tp_50_done = True
                 return
 
-        # 时间止损
-        if holding_minutes >= 6*60 and pnl < 20:
-            await self._execute_sell(pos, 50, 'time_stop_6h')
-            return
-        if holding_minutes >= 24*60 and pnl < 50:
-            await self._execute_sell(pos, 100, 'time_stop_24h')
-            return
-        if holding_minutes >= 72*60:
-            await self._execute_sell(pos, 100, 'time_stop_72h')
-            return
+        # ── 追踪止损：基于最高价回撤比例 ──
+        if pos.highest_price > 0 and pos.buy_price_bnb > 0:
+            peak_multiple = pos.highest_price / pos.buy_price_bnb
+            if is_four_meme:
+                # Four.meme：涨1倍后回撤20%离场，涨2倍后保住买入价1.8倍，涨3倍后保住2.8倍
+                after_1x = fm_trail.get('after_1x', 0.80)
+                after_2x = fm_trail.get('after_2x', 1.80)
+                after_3x = fm_trail.get('after_3x', 2.80)
+                if peak_multiple >= 4 and current_price_bnb < pos.buy_price_bnb * after_3x:
+                    await self._execute_sell(pos, 100, 'fm_trailing_3x')
+                    return
+                if peak_multiple >= 3 and current_price_bnb < pos.buy_price_bnb * after_2x:
+                    await self._execute_sell(pos, 100, 'fm_trailing_2x')
+                    return
+                if peak_multiple >= 2 and current_price_bnb < pos.highest_price * after_1x:
+                    await self._execute_sell(pos, 100, 'fm_trailing_1x')
+                    return
+            else:
+                # 普通代币追踪止损
+                if peak_multiple >= 6:
+                    trail_factor = 0.85
+                elif peak_multiple >= 4:
+                    trail_factor = 0.80
+                elif peak_multiple >= 3:
+                    trail_factor = 0.75
+                elif peak_multiple >= 2:
+                    trail_factor = 0.65
+                else:
+                    trail_factor = None
+                if trail_factor is not None:
+                    stop_price = pos.highest_price * trail_factor
+                    if current_price_bnb < stop_price:
+                        await self._execute_sell(pos, 100, 'trailing_stop')
+                        return
+
+        # ── 初始止损 ──
+        if is_four_meme:
+            # Four.meme：止损不设时间限制（普通-30%要求<=30min，four_meme去掉限制）
+            initial_sl = abs(fm_sl.get('initial', 20))
+            if pnl <= -initial_sl:
+                await self._execute_sell(pos, 100, 'initial_stop_loss')
+                return
+        else:
+            initial_sl = self.config.get("trailing_stop", {}).get("initial_stop_loss", 30)
+            if holding_minutes <= 30 and pnl <= -initial_sl:
+                await self._execute_sell(pos, 100, 'initial_stop_loss')
+                return
+
+        # ── 时间止损 ──
+        if is_four_meme:
+            time_stops = fm_sl.get('time_stops', [])
+            if time_stops:
+                # Four.meme 时间止损：3/10/30 分钟更激进
+                for ts in time_stops:
+                    minutes       = ts.get('minutes', 0)
+                    pnl_threshold = ts.get('pnl_threshold', 0)
+                    if holding_minutes >= minutes and pnl < pnl_threshold:
+                        await self._execute_sell(pos, 100, f'fm_time_stop_{minutes}min')
+                        return
+            else:
+                # 兜底：four_meme_strategy 未加载时（bot未重启）的硬编码时间止损
+                if holding_minutes >= 3 and pnl < -10:
+                    await self._execute_sell(pos, 100, 'fm_fallback_stop_3min')
+                    return
+                if holding_minutes >= 10 and pnl < 0:
+                    await self._execute_sell(pos, 100, 'fm_fallback_stop_10min')
+                    return
+                if holding_minutes >= 30 and pnl < 50:
+                    await self._execute_sell(pos, 100, 'fm_fallback_stop_30min')
+                    return
+        else:
+            # 普通代币时间止损
+            five_min_cfg = self.config.get("five_min_check", {})
+            five_min_threshold = five_min_cfg.get("pnl_threshold", -15) if five_min_cfg.get("enabled", True) else -8
+            if holding_minutes >= 5 and pnl < five_min_threshold:
+                await self._execute_sell(pos, 100, 'time_stop_5min')
+                return
+            if holding_minutes >= 15 and pnl < 0:
+                await self._execute_sell(pos, 100, 'time_stop_15min')
+                return
+            if holding_minutes >= 60 and pnl < 30:
+                await self._execute_sell(pos, 100, 'time_stop_1h')
+                return
+            if holding_minutes >= 6*60 and pnl < 20:
+                await self._execute_sell(pos, 50, 'time_stop_6h')
+                return
+            if holding_minutes >= 24*60 and pnl < 50:
+                await self._execute_sell(pos, 100, 'time_stop_24h')
+                return
+            if holding_minutes >= 72*60:
+                await self._execute_sell(pos, 100, 'time_stop_72h')
+                return
 
     async def _get_price_onchain(self, token_address: str, pair_address=None) -> Tuple[Optional[dict], str]:
         """
@@ -899,6 +1059,104 @@ class PositionManager:
             return None, "network"
 
 
+
+    async def _resolve_token_name(self, token_address: str, fallback_name: str = "") -> tuple:
+        """
+        链上读取 ERC20 name/symbol。
+        如果 fallback_name 已经是真实名称（非空、非地址格式）则直接返回。
+        返回 (name, symbol)
+        """
+        # 已有真实名称则直接用
+        if (fallback_name
+                and not fallback_name.startswith("0x")
+                and len(fallback_name) < 50):
+            return fallback_name, fallback_name
+
+        try:
+            w3 = self.executor.w3
+            contract = w3.eth.contract(
+                address=AsyncWeb3.to_checksum_address(token_address),
+                abi=ERC20_ABI,
+            )
+            name   = await contract.functions.name().call()
+            symbol = await contract.functions.symbol().call()
+            logger.info(f"[resolve_name] {token_address[:10]} → name={name} symbol={symbol}")
+            return (name or fallback_name or token_address[:8],
+                    symbol or fallback_name or token_address[:8])
+        except Exception as e:
+            logger.debug(f"[resolve_name] 读取失败 {token_address[:10]}: {e}")
+            return (fallback_name or token_address[:8],
+                    fallback_name or token_address[:8])
+
+    async def _check_graduation_and_get_pair(self, pos) -> bool:
+        """
+        检查 pregrad 持仓是否已毕业（PancakeSwap pair 是否存在）。
+        已毕业则更新 pos.pair_address / pos.pregrad_buy，保存 DB，启动事件监听。
+        返回 True 表示已毕业且 pair 已获取，False 表示尚未毕业。
+        """
+        if not pos.pregrad_buy:
+            return True   # 已经处理过了
+
+        if pos.pair_address:   # 已有 pair，直接标记完成
+            pos.pregrad_buy = False
+            await self._save_position(pos)
+            return True
+
+        PANCAKE_FACTORY = "0xcA143Ce32Fe78f1f7019d7d551a6402fC5350c73"
+        WBNB            = "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c"
+        ZERO            = "0x" + "0" * 40
+
+        try:
+            w3 = self.executor.w3
+            factory = w3.eth.contract(
+                address=AsyncWeb3.to_checksum_address(PANCAKE_FACTORY),
+                abi=PANCAKESWAP_V2_FACTORY_ABI,
+            )
+            pair = await factory.functions.getPair(
+                AsyncWeb3.to_checksum_address(pos.token_address),
+                AsyncWeb3.to_checksum_address(WBNB),
+            ).call()
+
+            if not pair or pair == ZERO:
+                return False   # pair 还没建，继续等
+
+            # 毕业成功
+            pos.pair_address = pair
+            pos.pregrad_buy  = False
+            await self._save_position(pos)
+            self.start_watching(pos.token_address, pair)
+            logger.success(
+                f"[graduation] {pos.token_name} 已毕业！"
+                f"pair={pair[:12]}，启动 Swap 事件监听"
+            )
+            return True
+
+        except Exception as e:
+            logger.warning(f"[graduation] 获取 pair 失败 {pos.token_name}: {e}")
+            return False
+
+    async def _get_bonding_curve_progress(self, token_address: str) -> float:
+        """读取四.meme bonding curve 募资进度 (slot5=target, slot8=raised)"""
+        FACTORY = '0x5c952063c7fc8610FFDB798152D69F0B9550762b'
+        SEL = 'e684626b'
+        try:
+            w3 = self.executor.w3
+            token_padded = '000000000000000000000000' + token_address[2:].lower()
+            result = await w3.eth.call({
+                'to': AsyncWeb3.to_checksum_address(FACTORY),
+                'data': bytes.fromhex(SEL + token_padded),
+            })
+            if not result or len(result) < 9 * 32:
+                return 0.0
+            raw   = result.hex()
+            slot5 = int(raw[5 * 64:6 * 64], 16)
+            slot8 = int(raw[8 * 64:9 * 64], 16)
+            if slot5 == 0:
+                return 0.0
+            return min(100.0, slot8 / slot5 * 100)
+        except Exception as e:
+            logger.debug(f"进度读取失败 {token_address[:8]}: {e}")
+            return 0.0
 
     async def _get_four_meme_price_onchain(self, token_address: str) -> Tuple[Optional[dict], str]:
         """
@@ -1155,7 +1413,8 @@ class PositionManager:
                 manual_price=pos.current_price,
                 sell_percentage_real=real_pct_1,
                 cost_basis_bnb=cost_basis_1,
-                dex_name=pos.dex_name
+                dex_name=pos.dex_name,
+                note=reason
             )
             await asyncio.sleep(5)
             
@@ -1172,7 +1431,8 @@ class PositionManager:
                 manual_price=pos.current_price,
                 sell_percentage_real=real_pct_2,
                 cost_basis_bnb=cost_basis_2,
-                dex_name=pos.dex_name
+                dex_name=pos.dex_name,
+                note=reason
             )
             res = res2
             total_bnb = float(res1.get("amount_bnb", 0)) + float(res2.get("amount_bnb", 0))
@@ -1182,16 +1442,42 @@ class PositionManager:
             sell_amount = current_holding * (percentage / 100)
             real_pct = (sell_amount / total_initial_tokens) * 100
             cost_basis = pos.buy_amount_bnb * (real_pct / 100)
-            
-            res = await self.executor.sell_token(
-                pos.token_address, pos.token_name, percentage,
-                slippage=slippage, gas_price=target_gas_price,
-                simulated_balance=pos.token_amount,
-                manual_price=pos.current_price,
-                sell_percentage_real=real_pct,
-                cost_basis_bnb=cost_basis,
-                dex_name=pos.dex_name
-            )
+
+            is_emergency_sell = "rug" in reason.lower() or "emergency" in reason.lower()
+            if is_emergency_sell:
+                # 紧急卖出：递增滑点重试
+                emergency_cfg = self.config.get("emergency_sell", {})
+                max_retries = emergency_cfg.get("max_retries", 5)
+                slippage_ladder = emergency_cfg.get("slippage_ladder", [12, 18, 27, 40, 49])
+                res = {"status": "failed", "reason": "not_attempted"}
+                for attempt, em_slippage in enumerate(slippage_ladder[:max_retries]):
+                    logger.warning(f"🚨 {pos.token_name} 紧急卖出尝试 {attempt+1}/{min(max_retries, len(slippage_ladder))} 滑点={em_slippage}%")
+                    res = await self.executor.sell_token(
+                        pos.token_address, pos.token_name, percentage,
+                        slippage=em_slippage, gas_price=target_gas_price,
+                        simulated_balance=pos.token_amount,
+                        manual_price=pos.current_price,
+                        sell_percentage_real=real_pct,
+                        cost_basis_bnb=cost_basis,
+                        dex_name=pos.dex_name,
+                        note=reason
+                    )
+                    if res.get("status") == "success":
+                        break
+                    await asyncio.sleep(1)
+                else:
+                    logger.error(f"🚨 {pos.token_name} 紧急卖出全部失败，共尝试 {min(max_retries, len(slippage_ladder))} 次")
+            else:
+                res = await self.executor.sell_token(
+                    pos.token_address, pos.token_name, percentage,
+                    slippage=slippage, gas_price=target_gas_price,
+                    simulated_balance=pos.token_amount,
+                    manual_price=pos.current_price,
+                    sell_percentage_real=real_pct,
+                    cost_basis_bnb=cost_basis,
+                    dex_name=pos.dex_name,
+                    note=reason
+                )
         
         if res["status"] == "success":
             bnb_got = float(res.get("amount_bnb", 0))
@@ -1240,7 +1526,20 @@ class PositionManager:
             
             # Save Position State Immediately
             await self._save_position(pos)
-            
+
+            # 写入 close_reason / closed_at / hold_minutes
+            closed_at_str = datetime.now().isoformat()
+            hold_minutes = int((time.time() - pos.buy_time) / 60)
+            try:
+                async with aiosqlite.connect(self.db_path) as db:
+                    await db.execute(
+                        f"UPDATE {self.positions_table} SET close_reason=?, closed_at=?, hold_minutes=? WHERE token_address=?",
+                        (reason, closed_at_str, hold_minutes, pos.token_address)
+                    )
+                    await db.commit()
+            except Exception as e:
+                logger.warning(f"写入close_reason失败: {e}")
+
             # Notify
             profit_str = f"+{pnl:.4f}" if pnl > 0 else f"{pnl:.4f}"
             await self._send_telegram_notification(

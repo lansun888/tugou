@@ -257,8 +257,14 @@ const PositionCard = ({ pos, onSell }) => {
   const avatarBg = getAvatarColor(pos.token_symbol || pos.token_name);
 
   // Helper for DexScreener data
+  // four_meme 代币链上定价，无 DexScreener 数据属正常，不显示"离线"
+  const isFourMeme = pos.dex_name === 'four_meme';
   const formatDexData = (val, isCurrency = true) => {
-      if (val === undefined || val === null || val === 0) return <span className="text-gray-600">-- <span className="text-[10px] opacity-60">(离线)</span></span>;
+      if (val === undefined || val === null || val === 0) {
+          return isFourMeme
+              ? <span className="text-gray-600">--</span>
+              : <span className="text-gray-600">-- <span className="text-[10px] opacity-60">(离线)</span></span>;
+      }
       if (isCurrency) return `$${val.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
       return val.toFixed(2) + '%';
   };
@@ -307,7 +313,7 @@ const PositionCard = ({ pos, onSell }) => {
           <div>
             <div className="flex items-center gap-2">
               <Text className="text-white font-bold text-lg flex items-center gap-2">
-                {pos.token_symbol || pos.token_name}
+                {pos.token_symbol || pos.token_name || pos.token_address?.slice(0, 8)}
                 {pos.dex_name === 'four_meme' && (
                   <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-700 border border-purple-200" title="Four.meme Platform">4M</span>
                 )}
@@ -370,31 +376,54 @@ const PositionCard = ({ pos, onSell }) => {
         </div>
       </div>
 
-      {/* DexScreener Stats */}
-      <div className="grid grid-cols-2 gap-2 mb-4 text-xs border-b border-slate-800 pb-4">
-        <div className="flex flex-col gap-1">
-          <div className="flex justify-between text-slate-500">
-            <span>24h Vol</span>
-            <span className="text-slate-300">{formatDexData(pos.volume_24h, true)}</span>
-          </div>
-          <div className="flex justify-between text-slate-500">
-            <span>Mkt Cap</span>
-            <span className="text-slate-300">{formatDexData(pos.market_cap, true)}</span>
-          </div>
-        </div>
-        <div className="flex flex-col gap-1 border-l border-slate-800 pl-2">
-          <div className="flex justify-between text-slate-500">
-            <span>5m Chg</span>
-            <span className={(pos.price_change_5m || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}>
-              {(pos.price_change_5m || 0) >= 0 ? '+' : ''}{formatDexData(pos.price_change_5m, false)}
+      {/* 市场数据区：pregrad 阶段显示 Bonding Curve 进度，否则显示 DexScreener 数据 */}
+      {isFourMeme && pos.pregrad_buy ? (
+        <div className="mb-4 border-b border-slate-800 pb-4">
+          <div className="flex justify-between text-xs text-slate-500 mb-1.5">
+            <span className="flex items-center gap-1">
+              <span className="w-2 h-2 rounded-full bg-purple-500 inline-block animate-pulse" />
+              Bonding Curve 进度
+            </span>
+            <span className="text-purple-300 font-mono font-bold">
+              {pos.pregrad_progress_at_buy ? `买入时 ${pos.pregrad_progress_at_buy.toFixed(0)}%` : '等待毕业...'}
             </span>
           </div>
-          <div className="flex justify-between text-slate-500">
-            <span>B/S (5m)</span>
-            {formatDexPair(pos.txns_5m_buys, pos.txns_5m_sells)}
+          <ProgressBar
+            value={Math.min(pos.pregrad_progress_at_buy || 0, 100)}
+            color="purple"
+            className="h-2"
+          />
+          <div className="flex justify-between text-[10px] text-slate-600 mt-1">
+            <span>0%</span>
+            <span className="text-purple-400">毕业线 100%</span>
           </div>
         </div>
-      </div>
+      ) : (
+        <div className="grid grid-cols-2 gap-2 mb-4 text-xs border-b border-slate-800 pb-4">
+          <div className="flex flex-col gap-1">
+            <div className="flex justify-between text-slate-500">
+              <span>24h Vol</span>
+              <span className="text-slate-300">{formatDexData(pos.volume_24h, true)}</span>
+            </div>
+            <div className="flex justify-between text-slate-500">
+              <span>Mkt Cap</span>
+              <span className="text-slate-300">{formatDexData(pos.market_cap, true)}</span>
+            </div>
+          </div>
+          <div className="flex flex-col gap-1 border-l border-slate-800 pl-2">
+            <div className="flex justify-between text-slate-500">
+              <span>5m Chg</span>
+              <span className={(pos.price_change_5m || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}>
+                {(pos.price_change_5m || 0) >= 0 ? '+' : ''}{formatDexData(pos.price_change_5m, false)}
+              </span>
+            </div>
+            <div className="flex justify-between text-slate-500">
+              <span>B/S (5m)</span>
+              {formatDexPair(pos.txns_5m_buys, pos.txns_5m_sells)}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Stats Row — 净盈亏精度 6 位小数 */}
       <Flex className="mb-4 bg-slate-950/50 p-3 rounded-lg flex-wrap gap-y-2">
