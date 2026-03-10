@@ -5,6 +5,22 @@ import api from '../utils/api';
 import DiscoveryDrawer from '../components/common/DiscoveryDrawer';
 import { formatDate } from '../utils/formatters';
 
+// 检测代币是否为貔貅（综合多数据源）
+const isHoneypotToken = (item) => {
+  const raw = item.check_details || {};
+  const goplus = raw.goplus || {};
+  const honeypot = raw.honeypot || {};
+  const simulation = raw.simulation || {};
+  if (
+    simulation.is_honeypot === true ||
+    goplus.is_honeypot === '1' ||
+    honeypot?.honeypotResult?.isHoneypot === true
+  ) return true;
+  // 从 risk_reason 文字中识别貔貅关键词
+  const reason = item.risk_reason || '';
+  return ['貔貅', '蜜罐', '无法卖出全部代币', 'simulationSuccess=False'].some(kw => reason.includes(kw));
+};
+
 // 从嵌套 check_details(raw_data) 中提取平铺字段
 const extractDetails = (raw = {}) => {
   const goplus = raw.goplus || {};
@@ -293,11 +309,19 @@ const Discoveries = () => {
                         </td>
                         <td className="py-3 px-4">
                           <div className="flex flex-col">
-                            <div className="flex items-center gap-1">
+                            <div className="flex items-center gap-1 flex-wrap">
                               <span className="font-medium text-gray-900">{item.token_symbol}</span>
                               {item.dex_name === 'four_meme' && (
                                 <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-700 border border-purple-200" title="Four.meme Platform">
                                   4M
+                                </span>
+                              )}
+                              {isHoneypotToken(item) && (
+                                <span
+                                  className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-700 border border-red-300"
+                                  title="检测为貔貅：无法卖出或模拟交易失败"
+                                >
+                                  🍯 貔貅
                                 </span>
                               )}
                             </div>

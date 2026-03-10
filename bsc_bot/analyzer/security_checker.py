@@ -54,6 +54,8 @@ GMGN_CHAIN = "bsc"
 # 升级到 BSCScan V2 API (使用 Etherscan V2 统一端点)
 BSCSCAN_API_URL = "https://api.etherscan.io/v2/api?chainid=56" 
 BSCSCAN_API_KEY = os.getenv("BSCSCAN_API_KEY", "")
+GMGN_TOKEN_STAT_URL = "https://gmgn.ai/api/v1/token_stat/bsc"
+DEXSCREENER_PAIRS_URL = "https://api.dexscreener.com/token-pairs/v1/bsc"
 
 # 必须成功的检测项 (Fail-Safe)
 # holders 不在此列：新币上线初期无真实钱包持仓是正常现象，改为评分降权而非硬拒绝
@@ -232,6 +234,191 @@ class SecurityChecker:
         except Exception as e:
             logger.warning(f"GMGN API 检测失败: {e}")
         return {}
+
+    async def check_gmgn_token_stat(self, token_address: str) -> Dict[str, Any]:
+        """GMGN Token Stat API：持有人数、老鼠仓占比、DEV持仓等"""
+        cache_key = f"gmgn_stat:{token_address.lower()}"
+        cached = _cache.get(cache_key, max_age_seconds=120)
+        if cached is not None:
+            logger.debug(f"[cache] gmgn_stat hit: {token_address[:10]}…")
+            return cached
+        try:
+            session = await self._get_session()
+            url = f"{GMGN_TOKEN_STAT_URL}/{token_address}"
+            headers = {
+                "Referer": "https://gmgn.ai/",
+                "Origin": "https://gmgn.ai",
+                "Accept": "application/json",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            }
+            async with session.get(url, headers=headers, timeout=3) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    result = data.get("data", {}) or {}
+                    logger.debug(f"GMGN token_stat for {token_address[:10]}: {json.dumps(result)[:300]}")
+                    if result:
+                        _cache.set(cache_key, result)
+                    return result
+                elif resp.status == 403:
+                    logger.debug(f"GMGN token_stat 403(Cloudflare)，跳过: {token_address[:10]}")
+        except asyncio.TimeoutError:
+            logger.warning(f"GMGN token_stat 超时(>3s)，跳过: {token_address[:10]}")
+        except Exception as e:
+            logger.warning(f"GMGN token_stat 失败: {e}")
+        return {}
+
+    async def check_price_behavior(self, token_address: str) -> Dict[str, Any]:
+        """
+        通过DexScreener数据检测异常价格行为
+        - 24h跌幅超85%：疑似砸盘
+        - 5分钟涨幅超500% + 1h跌幅超80%：典型拉盘砸盘
+        - 6h跌幅超90%：极端崩盘
+        超时3秒降级处理，不阻塞主流程
+        """
+        cache_key = f"price_behavior:{token_address.lower()}"
+        cached = _cache.get(cache_key, max_age_seconds=60)
+        if cached is not None:
+            logger.debug(f"[cache] price_behavior hit: {token_address[:10]}…")
+            return cached
+
+        result = {
+            "reject": False,
+            "reason": None,
+            "price_change_5m": 0.0,
+            "price_change_1h": 0.0,
+            "price_change_6h": 0.0,
+            "price_change_24h": 0.0,
+            "liquidity_usd": 0.0,
+            "token_age_minutes": None,
+        }
+        try:
+            session = await self._get_session()
+            url = f"{DEXSCREENER_PAIRS_URL}/{token_address}"
+            async with session.get(url, timeout=3) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    pair_list = data if isinstance(data, list) else data.get("pairs", [])
+                    if not pair_list:
+                        return result
+                    best_pair = max(pair_list, key=lambda x: float((x.get("liquidity") or {}).get("usd", 0) or 0))
+                    pc = best_pair.get("priceChange") or {}
+                    result["price_change_5m"]  = float(pc.get("m5",  0) or 0)
+                    result["price_change_1h"]  = float(pc.get("h1",  0) or 0)
+                    result["price_change_6h"]  = float(pc.get("h6",  0) or 0)
+                    result["price_change_24h"] = float(pc.get("h24", 0) or 0)
+                    result["liquidity_usd"]    = float((best_pair.get("liquidity") or {}).get("usd", 0) or 0)
+                    pair_created_at = best_pair.get("pairCreatedAt")
+                    if pair_created_at:
+                        result["token_age_minutes"] = (time.time() * 1000 - pair_created_at) / 60000
+                    # ── 硬拒绝规则 ──
+                    if result["price_change_24h"] <= -85:
+                        result["reject"] = True
+                        result["reason"] = f"价格从高点回撤超85% (24h: {result['price_change_24h']:.1f}%)"
+                    elif result["price_change_5m"] >= 500 and result["price_change_1h"] <= -80:
+                        result["reject"] = True
+                        result["reason"] = f"典型拉盘砸盘形态 (5m: +{result['price_change_5m']:.0f}%, 1h: {result['price_change_1h']:.0f}%)"
+                    elif result["price_change_6h"] <= -90:
+                        result["reject"] = True
+                        result["reason"] = f"6小时内价格崩溃超90% (6h: {result['price_change_6h']:.1f}%)"
+                    _cache.set(cache_key, result)
+        except asyncio.TimeoutError:
+            logger.warning(f"check_price_behavior 超时(>3s)，跳过: {token_address[:10]}")
+        except Exception as e:
+            logger.warning(f"check_price_behavior 失败: {e}")
+        return result
+
+    async def check_holder_structure(self, token_address: str) -> Dict[str, Any]:
+        """
+        检测持仓结构是否健康（使用GoPlus数据）
+        - top1 >= 40%：硬拒绝
+        - top2 >= 65%：硬拒绝
+        - top10 >= 80%：扣20分
+        超时3秒降级处理，不阻塞主流程
+        """
+        cache_key = f"holder_struct:{token_address.lower()}"
+        cached = _cache.get(cache_key, max_age_seconds=120)
+        if cached is not None:
+            logger.debug(f"[cache] holder_struct hit: {token_address[:10]}…")
+            return cached
+
+        result = {
+            "reject": False,
+            "reason": None,
+            "top1_holder_rate": 0.0,
+            "top2_holder_combined_rate": 0.0,
+            "top10_holder_rate": 0.0,
+            "score_deduct": 0,
+            "deduct_reason": None,
+        }
+        try:
+            goplus_data = await self.check_goplus(token_address)
+            if not goplus_data:
+                return result
+            holders = goplus_data.get("holders", [])
+            if not holders:
+                return result
+            DEAD = "0x000000000000000000000000000000000000dead"
+            ZERO = "0x0000000000000000000000000000000000000000"
+            real_rates = []
+            for h in holders:
+                addr = h.get("address", "").lower()
+                if addr in [DEAD, ZERO]:
+                    continue
+                if addr in [p.lower() for p in LOCK_PLATFORMS.values()]:
+                    continue
+                if h.get("is_contract") == 1:
+                    continue
+                pct = float(h.get("percent", 0) or 0)
+                real_rates.append(pct)
+            if not real_rates:
+                return result
+            real_rates.sort(reverse=True)
+            top1  = real_rates[0]
+            top2  = sum(real_rates[:2]) if len(real_rates) >= 2 else top1
+            top10 = sum(real_rates[:10])
+            result["top1_holder_rate"]          = top1
+            result["top2_holder_combined_rate"] = top2
+            result["top10_holder_rate"]         = top10
+            # ── 硬拒绝规则 ──
+            if top1 >= 0.40:
+                result["reject"] = True
+                result["reason"] = f"单地址持仓超40% ({top1*100:.1f}%)"
+            elif top2 >= 0.65:
+                result["reject"] = True
+                result["reason"] = f"Top2地址合计持仓超65% ({top2*100:.1f}%)"
+            # ── 扣分规则 ──
+            if not result["reject"] and top10 >= 0.80:
+                result["score_deduct"] = -20
+                result["deduct_reason"] = f"Top10持仓过于集中 ({top10*100:.1f}%)"
+            _cache.set(cache_key, result)
+        except asyncio.TimeoutError:
+            logger.warning(f"check_holder_structure 超时，跳过: {token_address[:10]}")
+        except Exception as e:
+            logger.warning(f"check_holder_structure 失败: {e}")
+        return result
+
+    @staticmethod
+    def _get_min_liquidity_threshold(token_age_minutes: Optional[float]) -> float:
+        """动态流动性门槛（基于代币年龄）"""
+        if token_age_minutes is None:
+            return 2000.0
+        if token_age_minutes < 10:
+            return 10000.0
+        elif token_age_minutes < 60:
+            return 5000.0
+        else:
+            return 2000.0
+
+    def _log_rejection(self, token_address: str, reason: str, data_snapshot: dict):
+        """结构化拒绝日志（JSON格式）"""
+        logger.warning(
+            "REJECTED " + json.dumps({
+                "token": token_address,
+                "action": "REJECTED",
+                "reason": reason,
+                "data_snapshot": data_snapshot,
+            }, ensure_ascii=False)
+        )
 
     async def check_contract_code(self, token_address: str) -> Dict[str, Any]:
         """合约代码分析 (通过 BscScan 获取 ABI/Source)"""
@@ -913,19 +1100,32 @@ class SecurityChecker:
             except Exception as e:
                 logger.warning(f"[four_meme] 黑名单检查失败(跳过): {e}")
 
-        # ── 2. 貔貅检测（并行）── GMGN API (最快感知) → Honeypot.is / GoPlus (并行)
+        # ── 2. 貔貅+行为检测（并行，全部3秒超时）──
         honeypot_res = {}
         goplus_res = {}
         gmgn_res = {}
+        gmgn_stat_res = {}
+        price_beh_res = {}
+        holder_stru_res = {}
         try:
-            honeypot_res, goplus_res, gmgn_res = await asyncio.gather(
-                self.check_honeypot_is(token_address),
-                self.check_goplus(token_address),
-                self.check_gmgn(token_address),
-                return_exceptions=False
+            _gr = await asyncio.gather(
+                asyncio.wait_for(self.check_honeypot_is(token_address),     timeout=3.0),
+                asyncio.wait_for(self.check_goplus(token_address),          timeout=3.0),
+                asyncio.wait_for(self.check_gmgn(token_address),            timeout=3.0),
+                asyncio.wait_for(self.check_gmgn_token_stat(token_address), timeout=3.0),
+                asyncio.wait_for(self.check_price_behavior(token_address),  timeout=3.0),
+                asyncio.wait_for(self.check_holder_structure(token_address), timeout=3.0),
+                return_exceptions=True,
             )
+            def _e(v, d): return v if not isinstance(v, Exception) else d
+            honeypot_res    = _e(_gr[0], {})
+            goplus_res      = _e(_gr[1], {})
+            gmgn_res        = _e(_gr[2], {})
+            gmgn_stat_res   = _e(_gr[3], {})
+            price_beh_res   = _e(_gr[4], {})
+            holder_stru_res = _e(_gr[5], {})
         except Exception as e:
-            logger.warning(f"[four_meme] 貔貅/GoPlus/GMGN 检测异常(跳过): {e}")
+            logger.warning(f"[four_meme] 并行检测异常(跳过): {e}")
 
         result["raw_data"]["gmgn"] = gmgn_res
 
@@ -1039,6 +1239,100 @@ class SecurityChecker:
             result["risk_items"] = risk_items
             result["analysis_time"] = time.time() - start_time
             return result
+
+        # ── 2e. GMGN Token Stat 过滤 ──
+        if gmgn_stat_res:
+            _t10  = float(gmgn_stat_res.get("top_10_holder_rate", 0) or 0)
+            _hcnt = int(gmgn_stat_res.get("holder_count", 0) or 0)
+            _rat  = float(gmgn_stat_res.get("rat_trader_amount_percentage", 0) or 0)
+            _dev  = float(gmgn_stat_res.get("creator_hold_rate", 0) or 0)
+            _age  = price_beh_res.get("token_age_minutes") if price_beh_res else None
+            _liq  = price_beh_res.get("liquidity_usd", 0) if price_beh_res else 0
+
+            if _t10 >= 0.50:
+                _snap = {"top10_rate": round(_t10, 4), "holder_count": _hcnt, "liquidity_usd": _liq}
+                self._log_rejection(token_address, f"Top10持仓超50% ({_t10*100:.0f}%)", _snap)
+                score = 0
+                risk_items.append({"desc": f"Top10持仓超50%，筹码高度集中 ({_t10*100:.0f}%)", "score": -100})
+                result["final_score"] = 0; result["decision"] = "reject"
+                result["risk_items"] = risk_items; result["analysis_time"] = time.time() - start_time
+                return result
+
+            if _rat >= 0.30:
+                _snap = {"rat_trader_ratio": round(_rat, 4), "top10_rate": round(_t10, 4), "holder_count": _hcnt}
+                self._log_rejection(token_address, f"老鼠仓占比超30% ({_rat*100:.0f}%)", _snap)
+                score = 0
+                risk_items.append({"desc": f"老鼠仓占比超30% ({_rat*100:.0f}%)", "score": -100})
+                result["final_score"] = 0; result["decision"] = "reject"
+                result["risk_items"] = risk_items; result["analysis_time"] = time.time() - start_time
+                return result
+
+            if 0 < _hcnt <= 50:
+                _snap = {"holder_count": _hcnt, "top10_rate": round(_t10, 4), "liquidity_usd": _liq}
+                self._log_rejection(token_address, f"持有者数量不足50人 ({_hcnt})", _snap)
+                score = 0
+                risk_items.append({"desc": f"持有者不足50人 ({_hcnt})", "score": -100})
+                result["final_score"] = 0; result["decision"] = "reject"
+                result["risk_items"] = risk_items; result["analysis_time"] = time.time() - start_time
+                return result
+
+            if _dev < 0.001 and _age is not None and 0 < _age < 60:
+                _snap = {"dev_holding_pct": round(_dev, 6), "token_age_min": round(_age, 1)}
+                self._log_rejection(token_address, f"上线{_age:.0f}分钟内DEV已清仓", _snap)
+                score = 0
+                risk_items.append({"desc": f"上线60分钟内DEV已清仓（{_age:.0f}分钟）", "score": -100})
+                result["final_score"] = 0; result["decision"] = "reject"
+                result["risk_items"] = risk_items; result["analysis_time"] = time.time() - start_time
+                return result
+
+        # ── 2f. 价格行为过滤 ──
+        if price_beh_res and price_beh_res.get("reject"):
+            _reason = price_beh_res.get("reason", "价格异常")
+            _snap = {
+                "price_drop_pct": price_beh_res.get("price_change_24h", 0),
+                "price_change_1h": price_beh_res.get("price_change_1h", 0),
+                "price_change_5m": price_beh_res.get("price_change_5m", 0),
+                "liquidity_usd": price_beh_res.get("liquidity_usd", 0),
+                "token_age_min": price_beh_res.get("token_age_minutes"),
+            }
+            self._log_rejection(token_address, _reason, _snap)
+            score = 0
+            risk_items.append({"desc": _reason, "score": -100})
+            result["final_score"] = 0; result["decision"] = "reject"
+            result["risk_items"] = risk_items; result["analysis_time"] = time.time() - start_time
+            return result
+
+        # ── 2g. 动态流动性门槛 ──
+        if price_beh_res:
+            _liq_usd = float(price_beh_res.get("liquidity_usd", 0) or 0)
+            _age_min = price_beh_res.get("token_age_minutes")
+            _min_liq = self._get_min_liquidity_threshold(_age_min)
+            if 0 < _liq_usd < _min_liq:
+                _snap = {"liquidity_usd": round(_liq_usd, 2), "min_threshold": _min_liq, "token_age_min": round(_age_min, 1) if _age_min else None}
+                self._log_rejection(token_address, f"流动性低于动态门槛 (${_liq_usd:.0f} < ${_min_liq:.0f})", _snap)
+                score = 0
+                risk_items.append({"desc": f"新代币流动性不足动态门槛 (${_liq_usd:.0f})", "score": -100})
+                result["final_score"] = 0; result["decision"] = "reject"
+                result["risk_items"] = risk_items; result["analysis_time"] = time.time() - start_time
+                return result
+
+        # ── 2h. 持仓结构过滤 ──
+        if holder_stru_res and holder_stru_res.get("reject"):
+            _reason = holder_stru_res.get("reason", "持仓结构异常")
+            _snap = {
+                "top1_holder_rate": round(holder_stru_res.get("top1_holder_rate", 0), 4),
+                "top2_holder_combined_rate": round(holder_stru_res.get("top2_holder_combined_rate", 0), 4),
+                "top10_holder_rate": round(holder_stru_res.get("top10_holder_rate", 0), 4),
+            }
+            self._log_rejection(token_address, _reason, _snap)
+            score = 0
+            risk_items.append({"desc": _reason, "score": -100})
+            result["final_score"] = 0; result["decision"] = "reject"
+            result["risk_items"] = risk_items; result["analysis_time"] = time.time() - start_time
+            return result
+        if holder_stru_res and holder_stru_res.get("score_deduct"):
+            score += holder_stru_res["score_deduct"]
+            risk_items.append({"desc": holder_stru_res.get("deduct_reason", "持仓集中扣分"), "score": holder_stru_res["score_deduct"]})
 
         # ── 3. 税率检测（GoPlus 或 Honeypot.is）──
         try:
@@ -1169,6 +1463,9 @@ class SecurityChecker:
             _timed(self.analyze_buyer_fund_source(pair_address, token_address),             "fund_source"),
             _timed(self.check_deployer_token_retention(token_address, deployer_address),    "retention"),
             _timed(self.analyze_observation(token_address, pair_address, initial_state),    "observation"),
+            _timed(asyncio.wait_for(self.check_gmgn_token_stat(token_address), timeout=3.0),  "gmgn_stat"),
+            _timed(asyncio.wait_for(self.check_price_behavior(token_address),  timeout=3.0),  "price_behavior"),
+            _timed(asyncio.wait_for(self.check_holder_structure(token_address), timeout=3.0), "holder_struct"),
             return_exceptions=True
         )
         logger.info(f"⏱️ 全并行总耗时: {(time.perf_counter()-t_perf)*1000:.0f}ms")
@@ -1190,6 +1487,9 @@ class SecurityChecker:
         fund_source_data  = _unwrap(raw_results[8], {})
         retention_data    = _unwrap(raw_results[9], {})
         observation_data  = _unwrap(raw_results[10], {})
+        gmgn_stat_data    = _unwrap(raw_results[11], {})
+        price_beh_data    = _unwrap(raw_results[12], {})
+        holder_stru_data  = _unwrap(raw_results[13], {})
 
         # 优先处理本地拒绝信号（黑名单/模拟失败）
         if local_data.get("reject"):
@@ -1544,6 +1844,86 @@ class SecurityChecker:
                 score = 0 # 直接拒绝
                 risk_items.append({"desc": f"观察期内流动性大幅撤出 ({lc:.1f}%)", "score": -100})
                 return self._finalize_result(result, score, risk_items, bonus_items, start_time)
+
+        # 11. GMGN Token Stat 过滤（新增）
+        if gmgn_stat_data:
+            _t10  = float(gmgn_stat_data.get("top_10_holder_rate", 0) or 0)
+            _hcnt = int(gmgn_stat_data.get("holder_count", 0) or 0)
+            _rat  = float(gmgn_stat_data.get("rat_trader_amount_percentage", 0) or 0)
+            _dev  = float(gmgn_stat_data.get("creator_hold_rate", 0) or 0)
+            _age_min = price_beh_data.get("token_age_minutes") if price_beh_data else None
+            _liq  = price_beh_data.get("liquidity_usd", 0) if price_beh_data else 0
+
+            if _t10 >= 0.50:
+                _snap = {"top10_rate": round(_t10, 4), "holder_count": _hcnt, "liquidity_usd": _liq}
+                self._log_rejection(token_address, f"Top10持仓超50% ({_t10*100:.0f}%)", _snap)
+                score = 0
+                risk_items.append({"desc": f"Top10持仓超50%，筹码高度集中 ({_t10*100:.0f}%)", "score": -100})
+                return self._finalize_result(result, score, risk_items, bonus_items, start_time)
+
+            if _rat >= 0.30:
+                _snap = {"rat_trader_ratio": round(_rat, 4), "top10_rate": round(_t10, 4), "holder_count": _hcnt}
+                self._log_rejection(token_address, f"老鼠仓占比超30% ({_rat*100:.0f}%)", _snap)
+                score = 0
+                risk_items.append({"desc": f"老鼠仓占比超30% ({_rat*100:.0f}%)", "score": -100})
+                return self._finalize_result(result, score, risk_items, bonus_items, start_time)
+
+            if 0 < _hcnt <= 50:
+                _snap = {"holder_count": _hcnt, "top10_rate": round(_t10, 4), "liquidity_usd": _liq}
+                self._log_rejection(token_address, f"持有者数量不足50人 ({_hcnt})", _snap)
+                score = 0
+                risk_items.append({"desc": f"持有者不足50人 ({_hcnt})", "score": -100})
+                return self._finalize_result(result, score, risk_items, bonus_items, start_time)
+
+            if _dev < 0.001 and _age_min is not None and 0 < _age_min < 60:
+                _snap = {"dev_holding_pct": round(_dev, 6), "token_age_min": round(_age_min, 1)}
+                self._log_rejection(token_address, f"上线{_age_min:.0f}分钟内DEV已清仓", _snap)
+                score = 0
+                risk_items.append({"desc": f"上线60分钟内DEV已清仓（{_age_min:.0f}分钟）", "score": -100})
+                return self._finalize_result(result, score, risk_items, bonus_items, start_time)
+
+        # 12. 价格行为过滤（新增）
+        if price_beh_data and price_beh_data.get("reject"):
+            _reason = price_beh_data.get("reason", "价格异常")
+            _snap = {
+                "price_drop_pct": price_beh_data.get("price_change_24h", 0),
+                "price_change_1h": price_beh_data.get("price_change_1h", 0),
+                "price_change_5m": price_beh_data.get("price_change_5m", 0),
+                "liquidity_usd": price_beh_data.get("liquidity_usd", 0),
+                "token_age_min": price_beh_data.get("token_age_minutes"),
+            }
+            self._log_rejection(token_address, _reason, _snap)
+            score = 0
+            risk_items.append({"desc": _reason, "score": -100})
+            return self._finalize_result(result, score, risk_items, bonus_items, start_time)
+
+        # 动态流动性门槛
+        if price_beh_data:
+            _liq_usd = float(price_beh_data.get("liquidity_usd", 0) or 0)
+            _age_min = price_beh_data.get("token_age_minutes")
+            _min_liq = self._get_min_liquidity_threshold(_age_min)
+            if 0 < _liq_usd < _min_liq:
+                _snap = {"liquidity_usd": round(_liq_usd, 2), "min_threshold": _min_liq, "token_age_min": round(_age_min, 1) if _age_min else None}
+                self._log_rejection(token_address, f"流动性低于动态门槛 (${_liq_usd:.0f} < ${_min_liq:.0f})", _snap)
+                score = 0
+                risk_items.append({"desc": f"新代币流动性不足动态门槛 (${_liq_usd:.0f})", "score": -100})
+                return self._finalize_result(result, score, risk_items, bonus_items, start_time)
+
+        # 13. 持仓结构过滤（新增）
+        if holder_stru_data and holder_stru_data.get("reject"):
+            _reason = holder_stru_data.get("reason", "持仓结构异常")
+            _snap = {
+                "top1_holder_rate": round(holder_stru_data.get("top1_holder_rate", 0), 4),
+                "top2_holder_combined_rate": round(holder_stru_data.get("top2_holder_combined_rate", 0), 4),
+                "top10_holder_rate": round(holder_stru_data.get("top10_holder_rate", 0), 4),
+            }
+            self._log_rejection(token_address, _reason, _snap)
+            score = 0
+            risk_items.append({"desc": _reason, "score": -100})
+            return self._finalize_result(result, score, risk_items, bonus_items, start_time)
+        if holder_stru_data and holder_stru_data.get("score_deduct"):
+            score += holder_stru_data["score_deduct"]
+            risk_items.append({"desc": holder_stru_data.get("deduct_reason", "持仓集中扣分"), "score": holder_stru_data["score_deduct"]})
 
         # --- 汇总与决策 ---
         return self._finalize_result(result, score, risk_items, bonus_items, start_time)
