@@ -49,6 +49,8 @@ _cache = SmartCache()
 CHAIN_ID = 56
 GOPLUS_API_URL = "https://api.gopluslabs.io/api/v1/token_security/56"
 HONEYPOT_IS_API_URL = "https://api.honeypot.is/v2/IsHoneypot"
+GMGN_SECURITY_URL = "https://gmgn.ai/defi/quotation/v1/tokens/security"
+GMGN_CHAIN = "bsc"
 # 升级到 BSCScan V2 API (使用 Etherscan V2 统一端点)
 BSCSCAN_API_URL = "https://api.etherscan.io/v2/api?chainid=56" 
 BSCSCAN_API_KEY = os.getenv("BSCSCAN_API_KEY", "")
@@ -187,6 +189,48 @@ class SecurityChecker:
                     return result
         except Exception as e:
             logger.warning(f"Honeypot.is API 检测失败: {e}")
+        return {}
+
+    async def check_gmgn(self, token_address: str) -> Dict[str, Any]:
+        """GMGN Security API 检测（独立貔貅数据库，感知最快）"""
+        cache_key = f"gmgn:{token_address.lower()}"
+        cached = _cache.get(cache_key, max_age_seconds=300)  # 5 min
+        if cached is not None:
+            logger.debug(f"[cache] gmgn hit: {token_address[:10]}…")
+            return cached
+
+        try:
+            session = await self._get_session()
+            url = f"{GMGN_SECURITY_URL}/{GMGN_CHAIN}/{token_address}"
+            headers = {
+                "Referer": "https://gmgn.ai/",
+                "Origin": "https://gmgn.ai",
+                "Accept": "application/json, text/plain, */*",
+                "Accept-Language": "en-US,en;q=0.9",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "sec-fetch-dest": "empty",
+                "sec-fetch-mode": "cors",
+                "sec-fetch-site": "same-origin",
+            }
+            async with session.get(url, headers=headers, timeout=3) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    # GMGN 响应结构: {"code":0,"msg":"success","data":{"goplus":{...}}}
+                    # 提取 data.goplus 作为实际安全数据（GoPlus 格式）
+                    goplus_payload = data.get("data", {}).get("goplus") or {}
+                    logger.debug(f"GMGN Raw Data for {token_address}: {json.dumps(goplus_payload)[:400]}")
+                    if goplus_payload:
+                        _cache.set(cache_key, goplus_payload)
+                    return goplus_payload
+                elif resp.status == 403:
+                    # Cloudflare TLS 指纹拦截，Python aiohttp 特有，降级跳过
+                    logger.debug(f"GMGN API 403(Cloudflare)，跳过: {token_address[:10]}")
+                else:
+                    logger.warning(f"GMGN API 返回非200状态: {resp.status} for {token_address[:10]}")
+        except asyncio.TimeoutError:
+            logger.warning(f"GMGN API 超时(>3s)，跳过: {token_address[:10]}")
+        except Exception as e:
+            logger.warning(f"GMGN API 检测失败: {e}")
         return {}
 
     async def check_contract_code(self, token_address: str) -> Dict[str, Any]:
@@ -869,20 +913,72 @@ class SecurityChecker:
             except Exception as e:
                 logger.warning(f"[four_meme] 黑名单检查失败(跳过): {e}")
 
-        # ── 2. 貔貅检测（并行）──
+        # ── 2. 貔貅检测（并行）── GMGN API (最快感知) → Honeypot.is / GoPlus (并行)
         honeypot_res = {}
         goplus_res = {}
+        gmgn_res = {}
         try:
-            honeypot_res, goplus_res = await asyncio.gather(
+            honeypot_res, goplus_res, gmgn_res = await asyncio.gather(
                 self.check_honeypot_is(token_address),
                 self.check_goplus(token_address),
+                self.check_gmgn(token_address),
                 return_exceptions=False
             )
         except Exception as e:
-            logger.warning(f"[four_meme] 貔貅/GoPlus 检测异常(跳过): {e}")
+            logger.warning(f"[four_meme] 貔貅/GoPlus/GMGN 检测异常(跳过): {e}")
+
+        result["raw_data"]["gmgn"] = gmgn_res
+
+        # ── 2a-0. GMGN 确认貔貅（优先级最高，数据库更新最快）──
+        if gmgn_res:
+            if gmgn_res.get("is_honeypot") is True:
+                score = 0
+                risk_items.append({"desc": "GMGN 确认貔貅", "score": -100})
+                logger.warning(f"[four_meme] GMGN 确认貔貅: {token_address[:10]}")
+                result["final_score"] = 0
+                result["decision"] = "reject"
+                result["risk_items"] = risk_items
+                result["analysis_time"] = time.time() - start_time
+                return result
+            rug_ratio = float(gmgn_res.get("rug_ratio", 0) or 0)
+            if rug_ratio >= 0.8:
+                score = 0
+                risk_items.append({"desc": f"GMGN: 高Rug概率 ({rug_ratio*100:.0f}%)", "score": -100})
+                logger.warning(f"[four_meme] GMGN 高Rug概率 {rug_ratio:.2f} 拒绝: {token_address[:10]}")
+                result["final_score"] = 0
+                result["decision"] = "reject"
+                result["risk_items"] = risk_items
+                result["analysis_time"] = time.time() - start_time
+                return result
+            if gmgn_res.get("is_blacklisted") is True:
+                score = 0
+                risk_items.append({"desc": "GMGN: 代币已被黑名单", "score": -100})
+                logger.warning(f"[four_meme] GMGN 黑名单拒绝: {token_address[:10]}")
+                result["final_score"] = 0
+                result["decision"] = "reject"
+                result["risk_items"] = risk_items
+                result["analysis_time"] = time.time() - start_time
+                return result
+            top10_rate = float(gmgn_res.get("top_10_holder_rate", 0) or 0)
+            if top10_rate >= 0.95:
+                score = 0
+                risk_items.append({"desc": f"GMGN: 前10持仓过度集中 ({top10_rate*100:.0f}%)", "score": -100})
+                logger.warning(f"[four_meme] GMGN 持仓过度集中 {top10_rate:.2f} 拒绝: {token_address[:10]}")
+                result["final_score"] = 0
+                result["decision"] = "reject"
+                result["risk_items"] = risk_items
+                result["analysis_time"] = time.time() - start_time
+                return result
+            if gmgn_res.get("renounced") is False:
+                score -= 10
+                risk_items.append({"desc": "GMGN: 合约未放弃所有权", "score": -10})
+            if gmgn_res.get("low_liquidity") is True:
+                score -= 15
+                risk_items.append({"desc": "GMGN: 流动性不足", "score": -15})
 
         # Honeypot.is 确认貔貅 → 硬拒绝，score=0
-        if honeypot_res.get("isHoneypot"):
+        # 注意：isHoneypot 字段在 honeypotResult 子对象内，而非顶层
+        if honeypot_res.get("honeypotResult", {}).get("isHoneypot"):
             issue = honeypot_res.get("honeypotResult", {}).get("issue", "未知原因")
             score = 0
             risk_items.append({"desc": f"Honeypot.is 确认貔貅: {issue}", "score": -100})
@@ -920,11 +1016,18 @@ class SecurityChecker:
             result["analysis_time"] = time.time() - start_time
             return result
 
-        # ── 2c. 两个API均无响应（新代币未被索引）→ 扣20分 ──
+        # ── 2c. API 无响应扣分 ──
+        # 两个均无响应：扣20分
         if not honeypot_res and not goplus_res:
             score -= 20
             risk_items.append({"desc": "Honeypot.is/GoPlus 均无响应，代币未被API索引", "score": -20})
             logger.warning(f"[four_meme] 两个貔貅API均无响应，降低评分20分: {token_address[:10]}")
+        # GoPlus 单独无响应（Honeypot.is有数据但GoPlus无数据）→ 扣15分
+        # 修复漏洞：之前此场景无任何扣分，导致score=75直接买入
+        elif not goplus_res and honeypot_res:
+            score -= 15
+            risk_items.append({"desc": "GoPlus 无响应（代币未被索引），Honeypot.is仅作参考", "score": -15})
+            logger.warning(f"[four_meme] GoPlus无响应，扣15分: {token_address[:10]}")
 
         # ── 2d. GoPlus cannot_sell_all → 硬拒绝 ──
         if goplus_res and goplus_res.get("cannot_sell_all") == "1":
@@ -1051,10 +1154,14 @@ class SecurityChecker:
                 logger.info(f"⏱️ [{name}]: {(time.perf_counter()-t)*1000:.0f}ms (failed: {type(e).__name__})")
                 raise
 
+        # ── 全并行：本地检测 + 所有外部API同时发起 ──
+        # 检测链路: GMGN API (最快感知) → 本地模拟 → GoPlus API / Honeypot.is API (并行)
+        # 任意一个确认貔貅即硬拒绝。
         raw_results = await asyncio.gather(
             _timed(self._task_local_checks(token_address, deployer_address, pair_address), "local_checks"),
             _timed(self.check_goplus(token_address),                                        "goplus"),
             _timed(self.check_honeypot_is(token_address),                                   "honeypot"),
+            _timed(self.check_gmgn(token_address),                                          "gmgn"),
             _timed(self.check_contract_code(token_address),                                 "contract"),
             _timed(self.analyze_token_holders(token_address, deployer_address, pair_address), "holders"),
             _timed(self.analyze_deployer_history(deployer_address),                         "deployer"),
@@ -1075,13 +1182,14 @@ class SecurityChecker:
         local_data        = _unwrap(raw_results[0], {})
         goplus_data       = _unwrap(raw_results[1], {})
         honeypot_data     = _unwrap(raw_results[2], {})
-        contract_data     = _unwrap(raw_results[3], {})
-        holders_data      = _unwrap(raw_results[4], {})
-        deployer_data     = _unwrap(raw_results[5], {})
-        similarity_reason = _unwrap(raw_results[6], None)
-        fund_source_data  = _unwrap(raw_results[7], {})
-        retention_data    = _unwrap(raw_results[8], {})
-        observation_data  = _unwrap(raw_results[9], {})
+        gmgn_data         = _unwrap(raw_results[3], {})
+        contract_data     = _unwrap(raw_results[4], {})
+        holders_data      = _unwrap(raw_results[5], {})
+        deployer_data     = _unwrap(raw_results[6], {})
+        similarity_reason = _unwrap(raw_results[7], None)
+        fund_source_data  = _unwrap(raw_results[8], {})
+        retention_data    = _unwrap(raw_results[9], {})
+        observation_data  = _unwrap(raw_results[10], {})
 
         # 优先处理本地拒绝信号（黑名单/模拟失败）
         if local_data.get("reject"):
@@ -1170,7 +1278,9 @@ class SecurityChecker:
             if goplus_data.get("is_honeypot") == "1":
                 score = 0
                 risk_items.append({"desc": "GoPlus 标记为蜜罐", "score": -100})
-            
+                logger.warning(f"GoPlus 确认貔貅，硬拒绝: {token_address[:10]}")
+                return self._finalize_result(result, score, risk_items, bonus_items, start_time)
+
             buy_tax = float(goplus_data.get("buy_tax", 0) or 0) * 100
             sell_tax = float(goplus_data.get("sell_tax", 0) or 0) * 100
             
@@ -1231,6 +1341,38 @@ class SecurityChecker:
             if goplus_data.get("personal_slippage_modifiable") == "1":
                 score -= 20
                 risk_items.append({"desc": "GoPlus: 可针对个人地址修改滑点（貔貅特征）", "score": -20})
+
+        # 1b. GMGN 检测（独立貔貅数据库）
+        result["raw_data"]["gmgn"] = gmgn_data
+        if gmgn_data:
+            if gmgn_data.get("is_honeypot") is True:
+                score = 0
+                risk_items.append({"desc": "GMGN 确认貔貅", "score": -100})
+                logger.warning(f"GMGN 确认貔貅，硬拒绝: {token_address[:10]}")
+                return self._finalize_result(result, score, risk_items, bonus_items, start_time)
+            rug_ratio = float(gmgn_data.get("rug_ratio", 0) or 0)
+            if rug_ratio >= 0.8:
+                score = 0
+                risk_items.append({"desc": f"GMGN: 高Rug概率 ({rug_ratio*100:.0f}%)", "score": -100})
+                logger.warning(f"GMGN 高Rug概率 {rug_ratio:.2f} 硬拒绝: {token_address[:10]}")
+                return self._finalize_result(result, score, risk_items, bonus_items, start_time)
+            if gmgn_data.get("is_blacklisted") is True:
+                score = 0
+                risk_items.append({"desc": "GMGN: 代币已被黑名单", "score": -100})
+                logger.warning(f"GMGN 黑名单硬拒绝: {token_address[:10]}")
+                return self._finalize_result(result, score, risk_items, bonus_items, start_time)
+            top10_rate = float(gmgn_data.get("top_10_holder_rate", 0) or 0)
+            if top10_rate >= 0.95:
+                score = 0
+                risk_items.append({"desc": f"GMGN: 前10持仓过度集中 ({top10_rate*100:.0f}%)", "score": -100})
+                logger.warning(f"GMGN 持仓过度集中 {top10_rate:.2f} 硬拒绝: {token_address[:10]}")
+                return self._finalize_result(result, score, risk_items, bonus_items, start_time)
+            if gmgn_data.get("renounced") is False:
+                score -= 10
+                risk_items.append({"desc": "GMGN: 合约未放弃所有权", "score": -10})
+            if gmgn_data.get("low_liquidity") is True:
+                score -= 15
+                risk_items.append({"desc": "GMGN: 流动性不足", "score": -15})
 
         # 2. Honeypot.is 检测
         if honeypot_data:
