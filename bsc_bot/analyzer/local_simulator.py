@@ -198,10 +198,11 @@ class LocalSimulator:
     async def simulate_trade(self, token_address: str, pair_address: str, amount_bnb: float = 0.1):
         """
         Simulate Buy and Sell using eth_call.
-        Returns: (is_honeypot, buy_tax, sell_tax, error_reason)
+        Returns: (is_honeypot, buy_tax, sell_tax, error_reason, timing_stats)
         """
         t0 = time.perf_counter()
-        def _ms(t): return f"{(time.perf_counter()-t)*1000:.0f}ms"
+        timing_stats = {}
+        def _dur(t): return (time.perf_counter() - t) * 1000
 
         try:
             token_address = to_checksum_address(token_address)
@@ -245,20 +246,13 @@ class LocalSimulator:
                 self.find_balance_slot(token_address, pair_address),
                 self.find_allowance_slot(token_address),
             )
-            dur_parallel = _ms(t_parallel)
-
-            logger.info(
-                f"    ├─ [simulate] buy_call+find_slots 并行: {dur_parallel} "
-                f"| buy_err={buy_err} balance_slot={balance_slot} allowance_slot={allowance_slot}"
-            )
-
+            timing_stats["buy_step_ms"] = _dur(t_parallel)
+            
             if buy_err:
-                logger.info(f"    └─ [simulate] 总={_ms(t0)} → 买入失败")
-                return True, 0, 0, buy_err
+                return True, 0, 0, buy_err, timing_stats
 
             if balance_slot == -1 or allowance_slot == -1:
-                logger.warning(f"    └─ [simulate] 总={_ms(t0)} → slot未找到，跳过simulate降级到honeypot.is")
-                return False, 0, 0, "slot_not_found"
+                return False, 0, 0, "slot_not_found", timing_stats
 
             # ── Sell simulation ──
             t_sell = time.perf_counter()
@@ -300,12 +294,172 @@ class LocalSimulator:
             try:
                 await self.w3.eth.call(sell_tx, "latest", state_override)
             except Exception as e:
-                logger.info(f"    └─ [simulate] sell_call={_ms(t_sell)} 总={_ms(t0)} → 卖出失败")
-                return True, 0, 0, f"Sell Simulation Failed: {str(e)}"
+                timing_stats["sell_step_ms"] = _dur(t_sell)
+                return True, 0, 0, f"Sell Simulation Failed: {str(e)}", timing_stats
 
-            logger.info(f"    └─ [simulate] sell_call={_ms(t_sell)} 总={_ms(t0)} → Passed")
-            return False, 0, 0, "Simulation Passed"
+            timing_stats["sell_step_ms"] = _dur(t_sell)
+            timing_stats["total_ms"] = _dur(t0)
+            return False, 0, 0, "Simulation Passed", timing_stats
 
         except Exception as e:
             logger.error(f"Simulation error (treating as honeypot): {e}")
-            return True, 0, 0, f"Simulation Error: {e}"
+            return True, 0, 0, f"Simulation Error: {e}", timing_stats
+
+    async def simulate_buy(self, token_address: str, amount_bnb: float = 0.0001):
+        """
+        模拟买入操作，返回预期获得的代币数量
+        用于貔貅检测的预检测阶段
+        """
+        try:
+            token_address = to_checksum_address(token_address)
+            amount_in_wei = self.w3.to_wei(amount_bnb, 'ether')
+
+            # 编码买入交易
+            buy_fn = self.sync_router.functions.swapExactETHForTokensSupportingFeeOnTransferTokens(
+                0,
+                [WBNB_ADDRESS, token_address],
+                SIMULATOR_ADDRESS,
+                int(time.time()) + 1200
+            )
+            buy_data = self._encode_call_data(buy_fn)
+            buy_tx = {
+                'from': SIMULATOR_ADDRESS,
+                'to': ROUTER_ADDRESS,
+                'value': amount_in_wei,
+                'gas': 500000,
+                'gasPrice': 0,
+                'data': buy_data
+            }
+            buy_state_override = {
+                to_checksum_address(SIMULATOR_ADDRESS): {
+                    "balance": "0x56BC75E2D63100000"
+                }
+            }
+
+            # 执行模拟买入
+            await self.w3.eth.call(buy_tx, "latest", buy_state_override)
+
+            # 获取预期输出数量
+            try:
+                amounts_out = await self.router.functions.getAmountsOut(
+                    amount_in_wei,
+                    [WBNB_ADDRESS, token_address]
+                ).call()
+                received_amount = amounts_out[1] if len(amounts_out) > 1 else 0
+            except:
+                received_amount = 10**18  # 默认1个代币用于后续卖出测试
+
+            return {
+                "success": True,
+                "received_amount": received_amount,
+                "status": "success"
+            }
+
+        except Exception as e:
+            logger.warning(f"模拟买入失败: {str(e)}")
+            return {
+                "success": False,
+                "received_amount": 0,
+                "status": "revert",
+                "revert_reason": str(e)
+            }
+
+    async def simulate_sell(self, token_address: str, amount_token: int, pair_address: str = None):
+        """
+        模拟卖出操作，检测是否能成功卖出
+        用于貔貅检测的核心环节
+
+        Args:
+            token_address: 代币地址
+            amount_token: 卖出数量
+            pair_address: 交易对地址（用于查找存储槽位）
+        """
+        try:
+            token_address = to_checksum_address(token_address)
+
+            # 查找 balance 和 allowance slot
+            # 如果没有 pair_address，使用 WBNB 作为参考（可能不准确）
+            ref_address = pair_address if pair_address else WBNB_ADDRESS
+            balance_slot = await self.find_balance_slot(token_address, ref_address)
+            allowance_slot = await self.find_allowance_slot(token_address)
+
+            if balance_slot == -1 or allowance_slot == -1:
+                return {
+                    "success": False,
+                    "status": "revert",
+                    "revert_reason": "无法找到存储槽位",
+                    "effective_tax": 1.0
+                }
+
+            # 构造状态覆盖
+            bal_key = self._get_storage_slot(balance_slot, SIMULATOR_ADDRESS)
+            allow_key = self._get_nested_storage_slot(allowance_slot, SIMULATOR_ADDRESS, ROUTER_ADDRESS)
+            max_uint = "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+            amount_hex = "0x" + amount_token.to_bytes(32, 'big').hex()
+
+            state_override = {
+                token_address: {
+                    "stateDiff": {
+                        bal_key: amount_hex,
+                        allow_key: max_uint
+                    }
+                },
+                to_checksum_address(SIMULATOR_ADDRESS): {
+                    "balance": "0x56BC75E2D63100000"
+                }
+            }
+
+            # 编码卖出交易
+            sell_fn = self.sync_router.functions.swapExactTokensForETHSupportingFeeOnTransferTokens(
+                amount_token,
+                0,
+                [token_address, WBNB_ADDRESS],
+                SIMULATOR_ADDRESS,
+                int(time.time()) + 1200
+            )
+            sell_data = self._encode_call_data(sell_fn)
+            sell_tx = {
+                'from': SIMULATOR_ADDRESS,
+                'to': ROUTER_ADDRESS,
+                'value': 0,
+                'gas': 500000,
+                'gasPrice': 0,
+                'data': sell_data
+            }
+
+            # 执行模拟卖出
+            await self.w3.eth.call(sell_tx, "latest", state_override)
+
+            # 计算有效税率（通过 getAmountsOut 对比）
+            try:
+                amounts_out = await self.router.functions.getAmountsOut(
+                    amount_token,
+                    [token_address, WBNB_ADDRESS]
+                ).call()
+                expected_bnb = amounts_out[1] if len(amounts_out) > 1 else 0
+
+                # 简化税率计算：如果能成功调用，税率视为正常
+                effective_tax = 0.0
+            except:
+                effective_tax = 0.0
+
+            return {
+                "success": True,
+                "status": "success",
+                "effective_tax": effective_tax,
+                "revert_reason": None
+            }
+
+        except Exception as e:
+            error_msg = str(e)
+            logger.warning(f"模拟卖出失败: {error_msg}")
+
+            # 解析税率（如果错误信息中包含）
+            effective_tax = 1.0  # 默认100%税率（完全无法卖出）
+
+            return {
+                "success": False,
+                "status": "revert",
+                "revert_reason": error_msg,
+                "effective_tax": effective_tax
+            }

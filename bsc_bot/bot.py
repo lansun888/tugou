@@ -45,6 +45,10 @@ class TradingBot:
         self.position_manager = PositionManager(self.executor, db_path=self.db_path, mode=self.mode)
         self.performance_analyzer = PerformanceAnalyzer(db_path=self.db_path)
         
+        # Performance Tracking
+        self.perf_history = []
+        self.perf_lock = asyncio.Lock()
+
         # Simulation Manager
         if self.mode == 'simulation':
              self.simulation_manager = SimulationManager(db_path=self.db_path)
@@ -190,6 +194,61 @@ class TradingBot:
             except Exception as e:
                 logger.error(f"Error in pair processing loop: {e}")
 
+    async def _print_perf_report(self, token_address, perf_stats, total_time_ms):
+        """Print structured performance report and update summary stats"""
+        # Fill missing keys with 0
+        keys = ["gmgn_security", "goplus", "honeypot_is", "price_sanity", "sell_feasibility", "local_simulator", "gather_total", "pre_buy_check"]
+        for k in keys:
+            if k not in perf_stats: perf_stats[k] = 0
+
+        # Print Report
+        report = (
+            f"\n[PERF] token={token_address}\n"
+            f"  gmgn_security:      {perf_stats['gmgn_security']:.0f}ms\n"
+            f"  goplus:             {perf_stats['goplus']:.0f}ms\n"
+            f"  honeypot_is:        {perf_stats['honeypot_is']:.0f}ms\n"
+            f"  price_sanity:       {perf_stats['price_sanity']:.0f}ms\n"
+            f"  sell_feasibility:   {perf_stats['sell_feasibility']:.0f}ms\n"
+            f"  local_simulator:    {perf_stats['local_simulator']:.0f}ms\n"
+            f"  gather_total:       {perf_stats['gather_total']:.0f}ms  ← 并行总耗时\n"
+            f"  pre_buy_check:      {perf_stats['pre_buy_check']:.0f}ms\n"
+            f"  ──────────────────────────\n"
+            f"  全流程总耗时:        {total_time_ms:.0f}ms\n"
+        )
+        logger.info(report)
+
+        # Update History
+        async with self.perf_lock:
+            self.perf_history.append(perf_stats)
+            if len(self.perf_history) >= 10:
+                await self._print_perf_summary()
+                self.perf_history = [] # Reset after summary
+
+    async def _print_perf_summary(self):
+        """Print summary statistics for the last 10 tokens"""
+        if not self.perf_history: return
+        
+        count = len(self.perf_history)
+        keys = self.perf_history[0].keys()
+        
+        summary = "\n[PERF SUMMARY] Last 10 Tokens:\n"
+        summary += f"{'Function':<20} {'Avg(ms)':<10} {'Max(ms)':<10} {'Timeouts'}\n"
+        summary += "─"*50 + "\n"
+        
+        for k in keys:
+            values = [p[k] for p in self.perf_history]
+            avg_val = sum(values) / count
+            max_val = max(values)
+            # Assuming timeout if value is very close to timeout threshold (e.g. 3000ms for some)
+            # Or explicitly tracked. For now, just show stats.
+            # We don't track explicit timeouts in perf_stats (they return 0 or partial).
+            # We can infer timeout if value > 2900 for 3s timeout tasks.
+            timeouts = sum(1 for v in values if v > 2900) 
+            
+            summary += f"{k:<20} {avg_val:<10.0f} {max_val:<10.0f} {timeouts}\n"
+            
+        logger.info(summary)
+
     async def process_single_pair(self, pair_data):
         """Process a single pair with parallel tasks and timing logs"""
         def _ms(t0): return (time.perf_counter() - t0) * 1000
@@ -259,6 +318,7 @@ class TradingBot:
 
             # ── 阶段3+4：安全分析 + 预构建交易（并行）──
             t3 = time.perf_counter()
+            pre_buy_ms = 0
 
             async def run_security_check():
                 ts = time.perf_counter()
@@ -276,7 +336,9 @@ class TradingBot:
             async def run_pre_build():
                 ts = time.perf_counter()
                 result = await self.executor.pre_build_buy_tx(token_address)
-                logger.info(f"⏱️ 4.预构建交易: {_ms(ts):.0f}ms  ok={result is not None and 'tx' in (result or {})}")
+                nonlocal pre_buy_ms
+                pre_buy_ms = (time.perf_counter() - ts) * 1000
+                logger.info(f"⏱️ 4.预构建交易: {pre_buy_ms:.0f}ms  ok={result is not None and 'tx' in (result or {})}")
                 return result
 
             security_task = asyncio.create_task(run_security_check())
@@ -286,6 +348,11 @@ class TradingBot:
             pre_built_data = await pre_build_task
             dur34 = _ms(t3)   # ★ 立即捕获
             logger.info(f"⏱️ 3+4.并行(安全分析+预构建)合计: {dur34:.0f}ms")
+            
+            # [PERF] Report
+            perf_stats = analysis_result.get("perf_stats", {})
+            perf_stats["pre_buy_check"] = pre_buy_ms
+            await self._print_perf_report(token_address, perf_stats, _ms(t_total))
 
             score = analysis_result["final_score"]
             decision = analysis_result["decision"]

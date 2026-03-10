@@ -327,6 +327,145 @@ class SecurityChecker:
             logger.warning(f"check_price_behavior 失败: {e}")
         return result
 
+    async def check_price_sanity(self, token_address: str, pair_address: str = None) -> Dict[str, Any]:
+        """
+        价格异常检测：防止单价虚高、总量极少、市值流动性倒挂的貔貅币
+        """
+        result = {
+            "reject": False,
+            "reason": None
+        }
+
+        try:
+            if not self.w3:
+                return result
+
+            token_address = to_checksum_address(token_address)
+
+            # 获取 decimals, totalSupply, 单价
+            mc_res = await multicall3_batch(self.w3, [
+                (token_address, "decimals()", [], [], ["uint8"]),
+                (token_address, "totalSupply()", [], [], ["uint256"]),
+            ])
+
+            decimals = mc_res[0]
+            total_supply = mc_res[1]
+
+            if decimals is None or total_supply is None:
+                return result
+
+            # 硬拒绝1：decimals 异常（标准为18，允许范围6-24）
+            if decimals < 6 or decimals > 24:
+                return {
+                    "reject": True,
+                    "reason": f"decimals异常：{decimals}，非标准代币"
+                }
+
+            # 硬拒绝2：总供应量极少（< 1000枚，人为制造稀缺感）
+            actual_supply = total_supply / (10 ** decimals)
+            if actual_supply < 1000:
+                return {
+                    "reject": True,
+                    "reason": f"总供应量异常极少：{actual_supply:.2f}枚"
+                }
+
+            # 硬拒绝3：市值与流动性严重倒挂
+            # 从 DexScreener 获取市值和流动性数据
+            try:
+                ds_data = await self.check_dexscreener(token_address)
+                if ds_data:
+                    market_cap_usd = ds_data.get("market_cap_usd", 0)
+                    liquidity_usd = ds_data.get("liquidity_usd", 0)
+
+                    if market_cap_usd > 0 and liquidity_usd > 0:
+                        liq_ratio = liquidity_usd / market_cap_usd
+                        # 正常代币：流动性 >= 市值的1%
+                        # 貔貅：虚高市值但池子极小
+                        if liq_ratio < 0.01:
+                            return {
+                                "reject": True,
+                                "reason": f"市值流动性比异常：流动性仅占市值{liq_ratio:.2%}"
+                            }
+            except Exception as e:
+                logger.debug(f"check_price_sanity 市值检查失败(跳过): {e}")
+
+            return result
+
+        except Exception as e:
+            logger.warning(f"check_price_sanity 失败: {e}")
+            return result
+
+    async def check_sell_feasibility(self, token_address: str, pair_address: str = None) -> Dict[str, Any]:
+        """
+        卖出可行性预检测：买入前先用极小金额模拟卖出，确认卖出路径通畅
+        这是防止 failed_rug 最直接的方法
+
+        注意：此检测需要 pair_address 来查找存储槽位，如果没有 pair_address 则跳过
+        """
+        result = {
+            "reject": False,
+            "reason": None
+        }
+
+        try:
+            if not self.local_simulator:
+                return result
+
+            # 如果没有 pair_address，无法进行存储槽位检测，跳过
+            if not pair_address:
+                logger.debug(f"check_sell_feasibility 跳过: 缺少 pair_address")
+                return result
+
+            # 步骤1：先模拟买入极小量
+            sim_buy = await self.local_simulator.simulate_buy(
+                token_address,
+                amount_bnb=0.0001  # 极小金额测试
+            )
+
+            if not sim_buy.get("success"):
+                return {
+                    "reject": True,
+                    "reason": "模拟买入失败"
+                }
+
+            # 步骤2：立即模拟卖出刚买入的量
+            received_amount = sim_buy.get("received_amount", 0)
+            if received_amount == 0:
+                received_amount = 10**18  # 默认1个代币
+
+            sim_sell = await self.local_simulator.simulate_sell(
+                token_address,
+                amount_token=received_amount,
+                pair_address=pair_address  # 传入 pair_address
+            )
+
+            # 卖出revert = 貔貅
+            if not sim_sell.get("success") or sim_sell.get("status") == "revert":
+                revert_reason = sim_sell.get('revert_reason', '未知原因')
+                # 如果是存储槽位问题，降级为警告而非硬拒绝
+                if "存储槽位" in revert_reason:
+                    logger.warning(f"check_sell_feasibility 存储槽位检测失败(跳过): {token_address[:10]}")
+                    return result
+                return {
+                    "reject": True,
+                    "reason": f"模拟卖出失败：{revert_reason}"
+                }
+
+            # 卖出税率异常（超过50%视为貔貅）
+            effective_tax = sim_sell.get("effective_tax", 0)
+            if effective_tax > 0.50:
+                return {
+                    "reject": True,
+                    "reason": f"卖出税率异常高 {effective_tax*100:.1f}%"
+                }
+
+            return result
+
+        except Exception as e:
+            logger.warning(f"check_sell_feasibility 失败: {e}")
+            # 检测失败不应阻止买入，返回通过
+            return result
+
     async def check_holder_structure(self, token_address: str) -> Dict[str, Any]:
         """
         检测持仓结构是否健康（使用GoPlus数据）
@@ -982,7 +1121,7 @@ class SecurityChecker:
     async def _task_local_checks(self, token_address: str, deployer_address: str, pair_address: str) -> Dict[str, Any]:
         """本地检测（黑名单+代码Hash+模拟交易）打包为单一任务，与外部API并行执行"""
         t0 = time.perf_counter()
-        out = {"reject": False, "reason": None, "code_hash": None, "simulation": {}, "sim_bonus": False}
+        out = {"reject": False, "reason": None, "code_hash": None, "simulation": {}, "sim_bonus": False, "sim_timing": {}}
         try:
             # 1. DB 黑名单：deployer
             t1 = time.perf_counter()
@@ -992,7 +1131,6 @@ class SecurityChecker:
                 if reason:
                     out["reject"] = True
                     out["reason"] = f"Deployer 在本地黑名单中: {reason}"
-                    logger.info(f"⏱️ [local_checks] step1_deployer_db={dur1:.0f}ms → 命中黑名单，总={( time.perf_counter()-t0)*1000:.0f}ms")
                     return out
             else:
                 dur1 = (time.perf_counter() - t1) * 1000
@@ -1001,8 +1139,6 @@ class SecurityChecker:
             if deployer_address and deployer_address in self.blacklist:
                 out["reject"] = True
                 out["reason"] = "Deployer 在本地内存黑名单中"
-                dur2 = (time.perf_counter() - t2) * 1000
-                logger.info(f"⏱️ [local_checks] step1={dur1:.0f}ms step2_mem={dur2:.0f}ms → 内存黑名单，总={(time.perf_counter()-t0)*1000:.0f}ms")
                 return out
             dur2 = (time.perf_counter() - t2) * 1000
             # 3. 代码 Hash + 本地模拟（需要先 get_code）
@@ -1018,8 +1154,6 @@ class SecurityChecker:
                         if hash_reason:
                             out["reject"] = True
                             out["reason"] = f"合约代码Hash在黑名单中: {hash_reason}"
-                            dur3 = (time.perf_counter() - t3) * 1000
-                            logger.info(f"⏱️ [local_checks] step1={dur1:.0f}ms step2={dur2:.0f}ms step3_code={dur3:.0f}ms → hash黑名单，总={(time.perf_counter()-t0)*1000:.0f}ms")
                             return out
                 except Exception as e:
                     logger.warning(f"代码Hash获取失败: {e}")
@@ -1027,11 +1161,13 @@ class SecurityChecker:
             # 4. 本地模拟
             t4 = time.perf_counter()
             if self.local_simulator and pair_address:
-                is_hp, b_tax, s_tax, sim_reason = await self.local_simulator.simulate_trade(token_address, pair_address)
+                # Unpack 5 values including timing_stats
+                is_hp, b_tax, s_tax, sim_reason, timing_stats = await self.local_simulator.simulate_trade(token_address, pair_address)
                 dur4 = (time.perf_counter() - t4) * 1000
                 out["simulation"] = {"is_honeypot": is_hp, "buy_tax": b_tax, "sell_tax": s_tax, "reason": sim_reason}
+                out["sim_timing"] = timing_stats
+                
                 if sim_reason == "slot_not_found":
-                    # slot未找到不等于貔貅，降级到主流程的honeypot.is检测，不拒绝不加黑名单
                     logger.warning(f"[local_checks] slot未找到，跳过simulate判定: {token_address[:10]}")
                 elif is_hp:
                     out["reject"] = True
@@ -1047,7 +1183,7 @@ class SecurityChecker:
         except Exception as e:
             logger.warning(f"本地检测任务异常: {e}")
             dur1 = dur2 = dur3 = dur4 = -1
-        logger.info(f"⏱️ [local_checks] step1_deployer_db={dur1:.0f}ms step2_mem={dur2:.0f}ms step3_get_code={dur3:.0f}ms step4_simulate={dur4:.0f}ms 总={(time.perf_counter()-t0)*1000:.0f}ms")
+        
         return out
 
     async def _analyze_four_meme(self, token_address: str, deployer_address: str) -> Dict[str, Any]:
@@ -1473,11 +1609,33 @@ class SecurityChecker:
         bonus_items = []
 
         # ── 全并行：本地检测 + 所有外部API同时发起 ──
+        
+        # [PERF] Timers
+        perf_stats = {
+            "gmgn_security": 0,
+            "goplus": 0,
+            "honeypot_is": 0,
+            "price_sanity": 0, # check_price_behavior
+            "sell_feasibility": 0, # local_checks total
+            "local_simulator": 0, # simulate_trade internal
+            "gather_total": 0,
+            "pre_buy_check": 0 # filled by bot
+        }
+
         async def _timed(coro, name):
             t = time.perf_counter()
             try:
                 r = await coro
-                logger.info(f"⏱️ [{name}]: {(time.perf_counter()-t)*1000:.0f}ms")
+                dur = (time.perf_counter()-t)*1000
+                logger.info(f"⏱️ [{name}]: {dur:.0f}ms")
+                
+                # Capture stats
+                if name == "gmgn": perf_stats["gmgn_security"] = dur
+                elif name == "goplus": perf_stats["goplus"] = dur
+                elif name == "honeypot": perf_stats["honeypot_is"] = dur
+                elif name == "price_behavior": perf_stats["price_sanity"] = dur
+                elif name == "local_checks": perf_stats["sell_feasibility"] = dur
+                
                 return r
             except Exception as e:
                 logger.info(f"⏱️ [{name}]: {(time.perf_counter()-t)*1000:.0f}ms (failed: {type(e).__name__})")
@@ -1501,9 +1659,12 @@ class SecurityChecker:
             _timed(asyncio.wait_for(self.check_gmgn_token_stat(token_address), timeout=3.0),  "gmgn_stat"),
             _timed(asyncio.wait_for(self.check_price_behavior(token_address),  timeout=3.0),  "price_behavior"),
             _timed(asyncio.wait_for(self.check_holder_structure(token_address), timeout=3.0), "holder_struct"),
+            _timed(self.check_price_sanity(token_address, pair_address),                    "price_sanity"),
+            _timed(self.check_sell_feasibility(token_address, pair_address),                "sell_feasibility"),
             return_exceptions=True
         )
-        logger.info(f"⏱️ 全并行总耗时: {(time.perf_counter()-t_perf)*1000:.0f}ms")
+        perf_stats["gather_total"] = (time.perf_counter()-t_perf)*1000
+        logger.info(f"⏱️ 全并行总耗时: {perf_stats['gather_total']:.0f}ms")
 
         def _unwrap(val, default):
             if isinstance(val, Exception):
@@ -1525,11 +1686,34 @@ class SecurityChecker:
         gmgn_stat_data    = _unwrap(raw_results[11], {})
         price_beh_data    = _unwrap(raw_results[12], {})
         holder_stru_data  = _unwrap(raw_results[13], {})
+        price_sanity_data = _unwrap(raw_results[14], {})
+        sell_feas_data    = _unwrap(raw_results[15], {})
+
+        # [PERF] Extract simulator timing
+        if "sim_timing" in local_data:
+            perf_stats["local_simulator"] = local_data["sim_timing"].get("total_ms", 0)
+        
+        # Attach stats to result for printing in bot.py
+        result["perf_stats"] = perf_stats
 
         # 优先处理本地拒绝信号（黑名单/模拟失败）
         if local_data.get("reject"):
             score = 0
             risk_items.append({"desc": local_data.get("reason", "本地检测拒绝"), "score": -100})
+            return self._finalize_result(result, score, risk_items, bonus_items, start_time)
+
+        # 新增：价格异常检测硬拒绝
+        if price_sanity_data.get("reject"):
+            score = 0
+            risk_items.append({"desc": f"价格异常: {price_sanity_data.get('reason')}", "score": -100})
+            self._log_rejection(token_address, price_sanity_data.get("reason"), {"price_sanity": price_sanity_data})
+            return self._finalize_result(result, score, risk_items, bonus_items, start_time)
+
+        # 新增：卖出可行性检测硬拒绝
+        if sell_feas_data.get("reject"):
+            score = 0
+            risk_items.append({"desc": f"卖出不可行: {sell_feas_data.get('reason')}", "score": -100})
+            self._log_rejection(token_address, sell_feas_data.get("reason"), {"sell_feasibility": sell_feas_data})
             return self._finalize_result(result, score, risk_items, bonus_items, start_time)
 
         result["raw_data"]["simulation"] = local_data.get("simulation", {})
