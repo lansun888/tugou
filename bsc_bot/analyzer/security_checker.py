@@ -1216,6 +1216,32 @@ class SecurityChecker:
             result["analysis_time"] = time.time() - start_time
             return result
 
+        # ── 2b-2. Honeypot.is gas fingerprint 模板检测 ──
+        # IVT类型貔貅：欺骗了GoPlus/Honeypot.is主检测，但 gas 特征暴露身份
+        # 特征：decimals=8 + totalSupply=None + buyGas=154480 + sellGas=107848
+        # 此检测在 analyze() 中已存在，此处补全 four_meme 路径的遗漏
+        if honeypot_res:
+            _hp_token = honeypot_res.get("token", {}) or {}
+            _hp_sim   = honeypot_res.get("simulationResult", {}) or {}
+            _hp_dec   = _hp_token.get("decimals")
+            _hp_sup   = _hp_token.get("totalSupply")
+            _hp_bgas  = str(_hp_sim.get("buyGas", ""))
+            _hp_sgas  = str(_hp_sim.get("sellGas", ""))
+            if (_hp_dec == 8
+                    and _hp_sup is None
+                    and _hp_bgas in {"154480"}
+                    and _hp_sgas in {"107848"}):
+                score = 0
+                risk_items.append({"desc": f"Honeypot.is: 匹配已知貔貅合约模板(decimals=8,totalSupply=None,gas={_hp_bgas}/{_hp_sgas})", "score": -100})
+                logger.warning(f"[four_meme] 已知貔貅gas模板匹配，硬拒绝: {token_address[:10]}")
+                self._log_rejection(token_address, "已知貔貅合约模板(gas fingerprint)", {
+                    "decimals": _hp_dec, "totalSupply": _hp_sup,
+                    "buyGas": _hp_bgas, "sellGas": _hp_sgas,
+                })
+                result["final_score"] = 0; result["decision"] = "reject"
+                result["risk_items"] = risk_items; result["analysis_time"] = time.time() - start_time
+                return result
+
         # ── 2c. API 无响应扣分 ──
         # 两个均无响应：扣20分
         if not honeypot_res and not goplus_res:
@@ -1239,6 +1265,15 @@ class SecurityChecker:
             result["risk_items"] = risk_items
             result["analysis_time"] = time.time() - start_time
             return result
+
+        # ── 2d-2. GoPlus holder_count=0 → 扣分（代币无持仓记录，极度可疑）──
+        # holder_count='0' 而非 None/缺失，说明 GoPlus 已索引但没有任何持仓
+        if goplus_res:
+            _gp_hcnt_raw = goplus_res.get("holder_count")
+            if _gp_hcnt_raw is not None and str(_gp_hcnt_raw).strip() == "0":
+                score -= 20
+                risk_items.append({"desc": "GoPlus: 持有人数为0，代币无实际持仓（极度可疑）", "score": -20})
+                logger.warning(f"[four_meme] GoPlus holder_count=0，扣20分: {token_address[:10]}")
 
         # ── 2e. GMGN Token Stat 过滤 ──
         if gmgn_stat_res:
