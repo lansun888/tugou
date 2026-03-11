@@ -76,12 +76,20 @@ LOCK_PLATFORMS = {
 }
 
 # 危险函数列表
+DANGEROUS_MINT_PATTERNS = [
+    "function mint(",          # public mint
+    "function publicMint(",
+    "function ownerMint(",
+]
+SAFE_MINT_PATTERNS = [
+    "function _mint(",         # 内部函数，正常
+    "function _burn(",         # 内部函数，正常
+]
 DANGEROUS_FUNCTIONS = [
-    "mint", "_mint", 
-    "pause", "unpause", 
-    "blacklist", "addBlacklist", 
-    "setMaxTxAmount", 
-    "excludeFromFee", 
+    "pause", "unpause",
+    "blacklist", "addBlacklist",
+    "setMaxTxAmount",
+    "excludeFromFee",
     "transferOwnership"
 ]
 
@@ -273,6 +281,7 @@ class SecurityChecker:
         - 24h跌幅超85%：疑似砸盘
         - 5分钟涨幅超500% + 1h跌幅超80%：典型拉盘砸盘
         - 6h跌幅超90%：极端崩盘
+        - 新增：5分钟/1小时跌幅超70%/90%：价格崩溃中（2.4）
         超时3秒降级处理，不阻塞主流程
         """
         cache_key = f"price_behavior:{token_address.lower()}"
@@ -289,6 +298,8 @@ class SecurityChecker:
             "price_change_6h": 0.0,
             "price_change_24h": 0.0,
             "liquidity_usd": 0.0,
+            "volume_24h_usd": 0.0,
+            "market_cap_usd": 0.0,
             "token_age_minutes": None,
         }
         try:
@@ -307,11 +318,21 @@ class SecurityChecker:
                     result["price_change_6h"]  = float(pc.get("h6",  0) or 0)
                     result["price_change_24h"] = float(pc.get("h24", 0) or 0)
                     result["liquidity_usd"]    = float((best_pair.get("liquidity") or {}).get("usd", 0) or 0)
+                    result["volume_24h_usd"]   = float((best_pair.get("volume") or {}).get("h24", 0) or 0)
+                    result["market_cap_usd"]   = float(best_pair.get("marketCap", 0) or 0)
                     pair_created_at = best_pair.get("pairCreatedAt")
                     if pair_created_at:
                         result["token_age_minutes"] = (time.time() * 1000 - pair_created_at) / 60000
+
                     # ── 硬拒绝规则 ──
-                    if result["price_change_24h"] <= -85:
+                    # 2.4 价格崩溃实时检测（新增）
+                    if result["price_change_5m"] <= -70:
+                        result["reject"] = True
+                        result["reason"] = f"5分钟内跌幅{result['price_change_5m']:.0f}%，价格已在崩溃中"
+                    elif result["price_change_1h"] <= -90:
+                        result["reject"] = True
+                        result["reason"] = f"1小时跌幅{result['price_change_1h']:.0f}%，价格崩溃"
+                    elif result["price_change_24h"] <= -85:
                         result["reject"] = True
                         result["reason"] = f"价格从高点回撤超85% (24h: {result['price_change_24h']:.1f}%)"
                     elif result["price_change_5m"] >= 500 and result["price_change_1h"] <= -80:
@@ -330,6 +351,7 @@ class SecurityChecker:
     async def check_price_sanity(self, token_address: str, pair_address: str = None) -> Dict[str, Any]:
         """
         价格异常检测：防止单价虚高、总量极少、市值流动性倒挂的貔貅币
+        新增：成交额/流动性比值异常检测（2.1）
         """
         result = {
             "reject": False,
@@ -370,12 +392,24 @@ class SecurityChecker:
                 }
 
             # 硬拒绝3：市值与流动性严重倒挂
-            # 从 DexScreener 获取市值和流动性数据
+            # 从 check_price_behavior 获取市值和流动性数据
             try:
-                ds_data = await self.check_dexscreener(token_address)
-                if ds_data:
-                    market_cap_usd = ds_data.get("market_cap_usd", 0)
-                    liquidity_usd = ds_data.get("liquidity_usd", 0)
+                price_beh_data = await self.check_price_behavior(token_address)
+                if price_beh_data:
+                    market_cap_usd = price_beh_data.get("market_cap_usd", 0)
+                    liquidity_usd = price_beh_data.get("liquidity_usd", 0)
+                    volume_24h_usd = price_beh_data.get("volume_24h_usd", 0)
+
+                    # 2.1 成交额/流动性比值异常检测（新增）
+                    if liquidity_usd > 0 and volume_24h_usd > 0:
+                        vol_liq_ratio = volume_24h_usd / liquidity_usd
+
+                        # 硬拒绝：成交额是池子的1000倍以上（虚假流动性）
+                        if vol_liq_ratio > 1000:
+                            return {
+                                "reject": True,
+                                "reason": f"成交额/流动性比值异常: {vol_liq_ratio:.0f}倍，疑似虚假流动性"
+                            }
 
                     if market_cap_usd > 0 and liquidity_usd > 0:
                         liq_ratio = liquidity_usd / market_cap_usd
@@ -469,6 +503,9 @@ class SecurityChecker:
     async def check_holder_structure(self, token_address: str) -> Dict[str, Any]:
         """
         检测持仓结构是否健康（使用GoPlus数据）
+        优化2：过滤合约地址后再检测持仓集中度
+        新增2.2：人均持币金额检测（女巫攻击识别）
+        新增2.3：女巫地址识别（粉尘地址占比）
         - top1 >= 40%：硬拒绝
         - top2 >= 65%：硬拒绝
         - top10 >= 80%：扣20分
@@ -494,31 +531,94 @@ class SecurityChecker:
             if not goplus_data:
                 return result
             holders = goplus_data.get("holders", [])
+            holder_count = int(goplus_data.get("holder_count", 0) or 0)
             if not holders:
                 return result
             DEAD = "0x000000000000000000000000000000000000dead"
             ZERO = "0x0000000000000000000000000000000000000000"
-            real_rates = []
+
+            # 2.2 人均持币金额检测（新增）
+            # 从 check_price_behavior 获取市值数据
+            try:
+                price_beh_data = await self.check_price_behavior(token_address)
+                market_cap_usd = price_beh_data.get("market_cap_usd", 0) if price_beh_data else 0
+
+                if holder_count > 0 and market_cap_usd > 0:
+                    avg_holding = market_cap_usd / holder_count
+
+                    # 硬拒绝：持有者多但人均持币几乎为0（女巫攻击）
+                    if holder_count > 100 and avg_holding < 1.0:
+                        result["reject"] = True
+                        result["reason"] = f"人均持币${avg_holding:.4f}，疑似女巫地址刷持有者数量"
+                        _cache.set(cache_key, result)
+                        logger.warning(f"人均持币${avg_holding:.4f}，女巫攻击: {token_address[:10]}")
+                        return result
+
+                    # 扣分：人均偏低
+                    if avg_holding < 5.0:
+                        result["score_deduct"] = -20
+                        result["deduct_reason"] = f"人均持币偏低(${avg_holding:.2f})"
+            except Exception as e:
+                logger.debug(f"人均持币检测失败(跳过): {e}")
+
+            # 优化2：过滤合约地址，只统计真实钱包持仓
+            real_holders = []
+            dust_count = 0  # 2.3 女巫地址识别：粉尘地址计数
             for h in holders:
                 addr = h.get("address", "").lower()
                 if addr in [DEAD, ZERO]:
                     continue
                 if addr in [p.lower() for p in LOCK_PLATFORMS.values()]:
                     continue
+                # 过滤合约地址（is_contract=1）
                 if h.get("is_contract") == 1:
                     continue
                 pct = float(h.get("percent", 0) or 0)
-                real_rates.append(pct)
-            if not real_rates:
+                real_holders.append({"address": addr, "percent": pct})
+
+                # 2.3 统计粉尘地址（持币不足0.01%）
+                if pct < 0.0001:
+                    dust_count += 1
+
+            if not real_holders:
+                logger.info(f"[holder_struct] {token_address[:10]} 无真实钱包持仓，跳过持仓结构检测")
+                result["skip"] = True
                 return result
+
+            # 2.3 女巫地址识别（新增）
+            total_real = len(real_holders)
+            dust_ratio = dust_count / total_real if total_real > 0 else 0
+
+            # 硬拒绝：80%以上持有者是粉尘地址
+            if dust_ratio >= 0.80:
+                result["reject"] = True
+                result["reason"] = f"粉尘地址占比{dust_ratio:.0%}，疑似女巫攻击刷持有者"
+                _cache.set(cache_key, result)
+                logger.warning(f"粉尘地址占比{dust_ratio:.0%}，女巫攻击: {token_address[:10]}")
+                return result
+
+            # 扣分：粉尘地址占比偏高
+            if dust_ratio >= 0.50:
+                result["score_deduct"] = -25
+                result["deduct_reason"] = f"粉尘地址占比{dust_ratio:.0%}"
+            elif dust_ratio >= 0.30:
+                result["score_deduct"] = -15
+                result["deduct_reason"] = f"粉尘地址占比{dust_ratio:.0%}"
+
+            # 提取真实持仓比例并排序
+            real_rates = [h["percent"] for h in real_holders]
             real_rates.sort(reverse=True)
+
             top1  = real_rates[0]
             top2  = sum(real_rates[:2]) if len(real_rates) >= 2 else top1
             top10 = sum(real_rates[:10])
             result["top1_holder_rate"]          = top1
             result["top2_holder_combined_rate"] = top2
             result["top10_holder_rate"]         = top10
-            # ── 硬拒绝规则 ──
+
+            logger.debug(f"[holder_struct] {token_address[:10]} 真实钱包持仓: top1={top1:.2%}, top2={top2:.2%}, top10={top10:.2%}, dust={dust_ratio:.0%}")
+
+            # ── 硬拒绝规则（基于真实钱包持仓）──
             if top1 >= 0.40:
                 result["reject"] = True
                 result["reason"] = f"单地址持仓超40% ({top1*100:.1f}%)"
@@ -526,7 +626,7 @@ class SecurityChecker:
                 result["reject"] = True
                 result["reason"] = f"Top2地址合计持仓超65% ({top2*100:.1f}%)"
             # ── 扣分规则 ──
-            if not result["reject"] and top10 >= 0.80:
+            elif not result["score_deduct"] and top10 >= 0.80:
                 result["score_deduct"] = -20
                 result["deduct_reason"] = f"Top10持仓过于集中 ({top10*100:.1f}%)"
             _cache.set(cache_key, result)
@@ -1429,14 +1529,18 @@ class SecurityChecker:
                 result["risk_items"] = risk_items; result["analysis_time"] = time.time() - start_time
                 return result
 
-            if _rat >= 0.30:
+            # 2.3 老鼠仓阈值收紧（新增）
+            if _rat >= 0.20:
                 _snap = {"rat_trader_ratio": round(_rat, 4), "top10_rate": round(_t10, 4), "holder_count": _hcnt}
-                self._log_rejection(token_address, f"老鼠仓占比超30% ({_rat*100:.0f}%)", _snap)
+                self._log_rejection(token_address, f"老鼠仓占比超20% ({_rat*100:.0f}%)", _snap)
                 score = 0
-                risk_items.append({"desc": f"老鼠仓占比超30% ({_rat*100:.0f}%)", "score": -100})
+                risk_items.append({"desc": f"老鼠仓占比超20% ({_rat*100:.0f}%)", "score": -100})
                 result["final_score"] = 0; result["decision"] = "reject"
                 result["risk_items"] = risk_items; result["analysis_time"] = time.time() - start_time
                 return result
+            elif _rat >= 0.10:
+                score -= 20
+                risk_items.append({"desc": f"老鼠仓占比偏高 ({_rat*100:.0f}%)", "score": -20})
 
             if 0 < _hcnt <= 50:
                 _snap = {"holder_count": _hcnt, "top10_rate": round(_t10, 4), "liquidity_usd": _liq}
@@ -1447,14 +1551,18 @@ class SecurityChecker:
                 result["risk_items"] = risk_items; result["analysis_time"] = time.time() - start_time
                 return result
 
-            if _dev < 0.001 and _age is not None and 0 < _age < 60:
+            # 2.5 DEV开盘清仓时间窗口扩大（新增）
+            if _dev < 0.001 and _age is not None and 0 < _age < 30:
                 _snap = {"dev_holding_pct": round(_dev, 6), "token_age_min": round(_age, 1)}
-                self._log_rejection(token_address, f"上线{_age:.0f}分钟内DEV已清仓", _snap)
+                self._log_rejection(token_address, f"开盘{_age:.0f}分钟内DEV已清仓", _snap)
                 score = 0
-                risk_items.append({"desc": f"上线60分钟内DEV已清仓（{_age:.0f}分钟）", "score": -100})
+                risk_items.append({"desc": f"开盘30分钟内DEV已清仓（{_age:.0f}分钟）", "score": -100})
                 result["final_score"] = 0; result["decision"] = "reject"
                 result["risk_items"] = risk_items; result["analysis_time"] = time.time() - start_time
                 return result
+            elif _dev < 0.001 and _age is not None and 0 < _age < 60:
+                score -= 20
+                risk_items.append({"desc": f"开盘60分钟内DEV已清仓（{_age:.0f}分钟）", "score": -20})
 
         # ── 2f. 价格行为过滤 ──
         if price_beh_res and price_beh_res.get("reject"):
@@ -1811,6 +1919,17 @@ class SecurityChecker:
                 score -= 20
                 risk_items.append({"desc": "代币可增发 (Mintable)", "score": -20})
                 
+            # 优化1：is_open_source 改为扣分（未开源代理合约仍硬拒绝）
+            if goplus_data.get("is_open_source") == "0":
+                if goplus_data.get("is_proxy") == "1":
+                    score = 0
+                    risk_items.append({"desc": "未开源代理合约（高风险）", "score": -100})
+                    logger.warning(f"未开源代理合约，硬拒绝: {token_address[:10]}")
+                    return self._finalize_result(result, score, risk_items, bonus_items, start_time)
+                else:
+                    score -= 20
+                    risk_items.append({"desc": "合约未开源（新币上线初期BSCScan未索引）", "score": -20})
+
             if goplus_data.get("is_proxy") == "1":
                 score -= 10
                 risk_items.append({"desc": "代理合约 (Proxy)", "score": -10})
@@ -1955,17 +2074,35 @@ class SecurityChecker:
             
             # 简单的源码字符串匹配 (更严谨应该解析 ABI)
             lower_source = source_code.lower()
-            
+
+            # 修复1：区分 _mint 内部函数和 public mint
+            # 检查危险的 public mint 函数
+            has_dangerous_mint = any(p.lower() in source_code for p in DANGEROUS_MINT_PATTERNS)
+            if has_dangerous_mint:
+                score -= 15
+                risk_items.append({"desc": "发现外部可调用铸币函数", "score": -15})
+
+            # 检查其他危险函数
             for func in DANGEROUS_FUNCTIONS:
                 if func.lower() in lower_source:
                     # 排除 renounceOwnership，这是加分项
                     if func == "renounceOwnership":
                         continue
-                        
-                    # 简单扣分，实际需要确认是否为 owner only
+
+                    # 修复2：transferOwnership 降低扣分
+                    if func == "transferOwnership":
+                        # 检查是否已弃权
+                        owner = goplus_data.get("owner_address", "")
+                        if owner and owner != "0x0000000000000000000000000000000000000000":
+                            score -= 2  # 从-5降低到-2
+                            risk_items.append({"desc": "发现 transferOwnership（owner未弃权）", "score": -2})
+                        # 已弃权则不扣分
+                        continue
+
+                    # 其他危险函数扣分
                     score -= 5
                     risk_items.append({"desc": f"发现危险函数: {func}", "score": -5})
-            
+
             if "renounceownership" in lower_source or "owner = address(0)" in lower_source:
                 score += 10
                 bonus_items.append({"desc": "发现放弃所有权代码", "score": +10})
@@ -1991,9 +2128,21 @@ class SecurityChecker:
                     score -= 30
                     risk_items.append({"desc": f"存在巨鲸持仓 (Single: {max_single:.1f}%)", "score": -30})
 
-                if deployer_hold > 0.1:
+                # 修复3：Deployer持仓扣分逻辑修正
+                deployer_pct = deployer_hold / 100.0  # deployer_hold 是百分比值
+                if deployer_pct > 0.30:
                     score -= 35
-                    risk_items.append({"desc": f"Deployer 仍持有代币 ({deployer_hold:.1f}%)", "score": -35})
+                    risk_items.append({"desc": f"Deployer 持仓超30% ({deployer_hold:.1f}%)", "score": -35})
+                elif deployer_pct > 0.20:
+                    score -= 20
+                    risk_items.append({"desc": f"Deployer 持仓超20% ({deployer_hold:.1f}%)", "score": -20})
+                elif deployer_pct > 0.15:
+                    score -= 10
+                    risk_items.append({"desc": f"Deployer 持仓超15% ({deployer_hold:.1f}%)", "score": -10})
+                elif deployer_pct > 0.10:
+                    score -= 5
+                    risk_items.append({"desc": f"Deployer 持仓超10% ({deployer_hold:.1f}%)", "score": -5})
+                # 10%以下正常，不扣分
 
         # 6. Deployer 资金来源与行为 (新增)
         if deployer_data:
@@ -2073,6 +2222,24 @@ class SecurityChecker:
             _age_min = price_beh_data.get("token_age_minutes") if price_beh_data else None
             _liq  = price_beh_data.get("liquidity_usd", 0) if price_beh_data else 0
 
+            # 优化3：部署者历史阈值收紧
+            _deployer_token_count = int(gmgn_stat_data.get("creator_created_count", 0) or 0)
+            if _deployer_token_count >= 30:
+                _snap = {"deployer_token_count": _deployer_token_count, "holder_count": _hcnt}
+                self._log_rejection(token_address, f"部署者历史发币数量过多 ({_deployer_token_count}个)", _snap)
+                score = 0
+                risk_items.append({"desc": f"部署者历史发币数量过多 ({_deployer_token_count}个)，职业貔貅团队", "score": -100})
+                return self._finalize_result(result, score, risk_items, bonus_items, start_time)
+            elif _deployer_token_count >= 15:
+                score -= 20
+                risk_items.append({"desc": f"部署者历史发币较多 ({_deployer_token_count}个)", "score": -20})
+            elif _deployer_token_count >= 5:
+                score -= 10
+                risk_items.append({"desc": f"部署者历史发币 ({_deployer_token_count}个)", "score": -10})
+            elif _deployer_token_count >= 2:
+                score -= 5
+                risk_items.append({"desc": f"部署者连续发币 ({_deployer_token_count}个)", "score": -5})
+
             if _t10 >= 0.50:
                 _snap = {"top10_rate": round(_t10, 4), "holder_count": _hcnt, "liquidity_usd": _liq}
                 self._log_rejection(token_address, f"Top10持仓超50% ({_t10*100:.0f}%)", _snap)
@@ -2080,12 +2247,16 @@ class SecurityChecker:
                 risk_items.append({"desc": f"Top10持仓超50%，筹码高度集中 ({_t10*100:.0f}%)", "score": -100})
                 return self._finalize_result(result, score, risk_items, bonus_items, start_time)
 
-            if _rat >= 0.30:
+            # 2.3 老鼠仓阈值收紧（新增）
+            if _rat >= 0.20:
                 _snap = {"rat_trader_ratio": round(_rat, 4), "top10_rate": round(_t10, 4), "holder_count": _hcnt}
-                self._log_rejection(token_address, f"老鼠仓占比超30% ({_rat*100:.0f}%)", _snap)
+                self._log_rejection(token_address, f"老鼠仓占比超20% ({_rat*100:.0f}%)", _snap)
                 score = 0
-                risk_items.append({"desc": f"老鼠仓占比超30% ({_rat*100:.0f}%)", "score": -100})
+                risk_items.append({"desc": f"老鼠仓占比超20% ({_rat*100:.0f}%)", "score": -100})
                 return self._finalize_result(result, score, risk_items, bonus_items, start_time)
+            elif _rat >= 0.10:
+                score -= 20
+                risk_items.append({"desc": f"老鼠仓占比偏高 ({_rat*100:.0f}%)", "score": -20})
 
             if 0 < _hcnt <= 50:
                 _snap = {"holder_count": _hcnt, "top10_rate": round(_t10, 4), "liquidity_usd": _liq}
@@ -2094,12 +2265,77 @@ class SecurityChecker:
                 risk_items.append({"desc": f"持有者不足50人 ({_hcnt})", "score": -100})
                 return self._finalize_result(result, score, risk_items, bonus_items, start_time)
 
-            if _dev < 0.001 and _age_min is not None and 0 < _age_min < 60:
+            # 2.5 DEV开盘清仓时间窗口扩大（新增）
+            if _dev < 0.001 and _age_min is not None and 0 < _age_min < 30:
                 _snap = {"dev_holding_pct": round(_dev, 6), "token_age_min": round(_age_min, 1)}
-                self._log_rejection(token_address, f"上线{_age_min:.0f}分钟内DEV已清仓", _snap)
+                self._log_rejection(token_address, f"开盘{_age_min:.0f}分钟内DEV已清仓", _snap)
                 score = 0
-                risk_items.append({"desc": f"上线60分钟内DEV已清仓（{_age_min:.0f}分钟）", "score": -100})
+                risk_items.append({"desc": f"开盘30分钟内DEV已清仓（{_age_min:.0f}分钟）", "score": -100})
                 return self._finalize_result(result, score, risk_items, bonus_items, start_time)
+            elif _dev < 0.001 and _age_min is not None and 0 < _age_min < 60:
+                score -= 20
+                risk_items.append({"desc": f"开盘60分钟内DEV已清仓（{_age_min:.0f}分钟）", "score": -20})
+
+        # 优化4：LP锁仓检测
+        if goplus_data:
+            lp_holders = goplus_data.get("lp_holders", [])
+            lp_total = goplus_data.get("lp_total_supply", 0)
+
+            if lp_holders and float(lp_total or 0) > 0:
+                # 计算锁仓比例
+                locked_balance = sum(
+                    float(h.get("balance", 0) or 0)
+                    for h in lp_holders
+                    if h.get("is_locked") == 1
+                    or h.get("tag") in ["PinkLock02", "Unicrypt", "TeamFinance"]
+                )
+                locked_ratio = locked_balance / float(lp_total)
+
+                # 修复4：LP锁仓为0时区分新币和老币
+                token_age_minutes = price_beh_data.get("token_age_minutes", 0) if price_beh_data else 0
+                owner_address = goplus_data.get("owner_address", "")
+
+                # LP完全未锁仓
+                if locked_ratio == 0:
+                    if token_age_minutes <= 10:
+                        # 新币10分钟内数据未更新，不扣分，记录警告
+                        logger.warning(f"新币LP锁仓数据可能未索引，跳过: {token_address[:10]}")
+                    elif token_age_minutes <= 30:
+                        # 轻微扣分
+                        score -= 10
+                        risk_items.append({"desc": "LP未锁仓（新币数据可能未更新）", "score": -10})
+                        logger.warning(f"LP未锁仓（新币{token_age_minutes:.0f}分钟）: {token_address[:10]}")
+                    else:
+                        # 上线超30分钟仍未锁仓
+                        # 只有同时满足：LP未锁仓 + token_age>30min + owner未弃权，才硬拒绝
+                        if owner_address and owner_address != "0x0000000000000000000000000000000000000000":
+                            # DEV既没锁仓又没放弃控制权，随时可以撤池子跑路
+                            _snap = {
+                                "lp_locked_ratio": 0,
+                                "lp_total_supply": float(lp_total),
+                                "token_age_min": token_age_minutes,
+                                "owner_address": owner_address
+                            }
+                            self._log_rejection(token_address, "LP完全未锁仓且合约未弃权，随时可跑路", _snap)
+                            score = 0
+                            risk_items.append({"desc": "LP完全未锁仓且合约未弃权，随时可跑路", "score": -100})
+                            return self._finalize_result(result, score, risk_items, bonus_items, start_time)
+                        else:
+                            # 合约已弃权，只扣分不硬拒绝
+                            score -= 30
+                            risk_items.append({"desc": "LP完全未锁仓（合约已弃权）", "score": -30})
+                            logger.warning(f"LP未锁仓但合约已弃权，扣30分: {token_address[:10]}")
+
+                # 扣分：锁仓比例不足
+                elif locked_ratio < 0.80:
+                    delta = -20
+                    score += delta
+                    risk_items.append({"desc": f"LP锁仓比例偏低: {locked_ratio:.0%}", "score": delta})
+                    logger.warning(f"LP锁仓比例偏低 {locked_ratio:.2%}: {token_address[:10]}")
+            elif not lp_holders or float(lp_total or 0) == 0:
+                # 无LP锁仓数据
+                score -= 15
+                risk_items.append({"desc": "无LP锁仓数据", "score": -15})
 
         # 12. 价格行为过滤（新增）
         if price_beh_data and price_beh_data.get("reject"):
@@ -2143,6 +2379,28 @@ class SecurityChecker:
         if holder_stru_data and holder_stru_data.get("score_deduct"):
             score += holder_stru_data["score_deduct"]
             risk_items.append({"desc": holder_stru_data.get("deduct_reason", "持仓集中扣分"), "score": holder_stru_data["score_deduct"]})
+
+        # 优化5：API失败时基础分降级
+        # 统计关键检测项的完成情况
+        completed_checks = 0
+        total_key_checks = 5  # goplus/honeypot/gmgn/gmgn_stat/holder_struct
+
+        if goplus_data:       completed_checks += 1
+        if honeypot_data:     completed_checks += 1
+        if gmgn_data:         completed_checks += 1
+        if gmgn_stat_data:    completed_checks += 1
+        if holder_stru_data and not holder_stru_data.get("skip"):  completed_checks += 1
+
+        # 关键检测项完成率不足时，主动降分
+        completion_rate = completed_checks / total_key_checks
+        if completion_rate < 0.6:   # 超过40%的关键检测失败
+            penalty = int((1 - completion_rate) * 30)
+            score -= penalty
+            logger.warning(
+                f"关键检测完成率{completion_rate:.0%}，"
+                f"主动降分-{penalty}: {token_address[:10]}"
+            )
+            risk_items.append({"desc": f"关键检测完成率不足({completion_rate:.0%})，主动降分", "score": -penalty})
 
         # --- 汇总与决策 ---
         return self._finalize_result(result, score, risk_items, bonus_items, start_time)
