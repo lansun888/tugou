@@ -1720,14 +1720,14 @@ class SecurityChecker:
         
         # [PERF] Timers
         perf_stats = {
-            "gmgn_security": 0,
-            "goplus": 0,
-            "honeypot_is": 0,
-            "price_sanity": 0, # check_price_behavior
-            "sell_feasibility": 0, # local_checks total
-            "local_simulator": 0, # simulate_trade internal
-            "gather_total": 0,
-            "pre_buy_check": 0 # filled by bot
+            # 16 个并行任务
+            "local_checks": 0, "goplus": 0, "honeypot": 0, "gmgn": 0,
+            "contract": 0, "holders": 0, "deployer": 0, "similarity": 0,
+            "fund_source": 0, "retention": 0, "observation": 0,
+            "gmgn_stat": 0, "price_behavior": 0, "holder_struct": 0,
+            "price_sanity": 0, "sell_feasibility": 0,
+            # 汇总
+            "local_simulator": 0, "gather_total": 0, "pre_buy_check": 0
         }
 
         async def _timed(coro, name):
@@ -1737,65 +1737,134 @@ class SecurityChecker:
                 dur = (time.perf_counter()-t)*1000
                 logger.info(f"⏱️ [{name}]: {dur:.0f}ms")
                 
-                # Capture stats
-                if name == "gmgn": perf_stats["gmgn_security"] = dur
-                elif name == "goplus": perf_stats["goplus"] = dur
-                elif name == "honeypot": perf_stats["honeypot_is"] = dur
-                elif name == "price_behavior": perf_stats["price_sanity"] = dur
-                elif name == "local_checks": perf_stats["sell_feasibility"] = dur
+                # Capture stats — 所有任务自动写入
+                perf_stats[name] = dur
                 
                 return r
             except Exception as e:
-                logger.info(f"⏱️ [{name}]: {(time.perf_counter()-t)*1000:.0f}ms (failed: {type(e).__name__})")
+                dur = (time.perf_counter()-t)*1000
+                logger.info(f"⏱️ [{name}]: {dur:.0f}ms (failed: {type(e).__name__})")
+                perf_stats[name] = dur
                 raise
 
-        # ── 全并行：本地检测 + 所有外部API同时发起 ──
-        # 检测链路: GMGN API (最快感知) → 本地模拟 → GoPlus API / Honeypot.is API (并行)
-        # 任意一个确认貔貅即硬拒绝。
-        raw_results = await asyncio.gather(
-            _timed(self._task_local_checks(token_address, deployer_address, pair_address), "local_checks"),
-            _timed(self.check_goplus(token_address),                                        "goplus"),
-            _timed(self.check_honeypot_is(token_address),                                   "honeypot"),
-            _timed(self.check_gmgn(token_address),                                          "gmgn"),
-            _timed(self.check_contract_code(token_address),                                 "contract"),
-            _timed(self.analyze_token_holders(token_address, deployer_address, pair_address), "holders"),
-            _timed(self.analyze_deployer_history(deployer_address),                         "deployer"),
-            _timed(self.check_bytecode_similarity(token_address),                           "similarity"),
-            _timed(self.analyze_buyer_fund_source(pair_address, token_address),             "fund_source"),
-            _timed(self.check_deployer_token_retention(token_address, deployer_address),    "retention"),
-            _timed(self.analyze_observation(token_address, pair_address, initial_state),    "observation"),
-            _timed(asyncio.wait_for(self.check_gmgn_token_stat(token_address), timeout=3.0),  "gmgn_stat"),
-            _timed(asyncio.wait_for(self.check_price_behavior(token_address),  timeout=3.0),  "price_behavior"),
-            _timed(asyncio.wait_for(self.check_holder_structure(token_address), timeout=3.0), "holder_struct"),
-            _timed(self.check_price_sanity(token_address, pair_address),                    "price_sanity"),
-            _timed(self.check_sell_feasibility(token_address, pair_address),                "sell_feasibility"),
-            return_exceptions=True
-        )
+        # ── 全并行 + 硬拒绝快速取消 ──
+        # 检测链路: GMGN API (最快感知) → GoPlus / Honeypot 并行 → 本地模拟
+        # 任意一个触发硬拒绝条件，立即取消尚未完成的慢速任务，不等 local_simulator 跑完。
+        reject_event = asyncio.Event()
+        result_container: Dict[str, Any] = {}
+
+        def _is_hard_reject(name: str, res: Any) -> bool:
+            """返回 True 表示已确认应拒绝，可提前取消其余任务"""
+            if not isinstance(res, dict):
+                return False
+            if name == "goplus":
+                return (
+                    res.get("is_honeypot") == "1"
+                    or float(res.get("creator_percent", 0) or 0) >= 0.99
+                    or res.get("cannot_sell_all") == "1"
+                    or (res.get("is_open_source") == "0" and res.get("is_proxy") == "1")
+                )
+            if name == "honeypot":
+                return bool((res.get("honeypotResult") or {}).get("isHoneypot"))
+            if name == "gmgn":
+                return res.get("is_honeypot") == "1"
+            if name in ("local_checks", "price_behavior", "price_sanity",
+                        "holder_struct", "sell_feasibility"):
+                return bool(res.get("reject"))
+            return False
+
+        async def _run_task(name: str, coro):
+            if reject_event.is_set():
+                return
+            try:
+                res = await coro
+                result_container[name] = res
+                if _is_hard_reject(name, res):
+                    reject_event.set()
+                    logger.info(f"[FAST REJECT] {name} 触发硬拒绝，取消其他任务")
+            except asyncio.CancelledError:
+                result_container.setdefault(name, None)
+                raise
+            except Exception as e:
+                result_container[name] = e
+
+        all_tasks = [
+            asyncio.create_task(_run_task("local_checks",
+                _timed(asyncio.wait_for(self._task_local_checks(token_address, deployer_address, pair_address), timeout=12.0), "local_checks"))),
+            asyncio.create_task(_run_task("goplus",
+                _timed(self.check_goplus(token_address), "goplus"))),
+            asyncio.create_task(_run_task("honeypot",
+                _timed(self.check_honeypot_is(token_address), "honeypot"))),
+            asyncio.create_task(_run_task("gmgn",
+                _timed(self.check_gmgn(token_address), "gmgn"))),
+            asyncio.create_task(_run_task("contract",
+                _timed(self.check_contract_code(token_address), "contract"))),
+            asyncio.create_task(_run_task("holders",
+                _timed(self.analyze_token_holders(token_address, deployer_address, pair_address), "holders"))),
+            asyncio.create_task(_run_task("deployer",
+                _timed(self.analyze_deployer_history(deployer_address), "deployer"))),
+            asyncio.create_task(_run_task("similarity",
+                _timed(self.check_bytecode_similarity(token_address), "similarity"))),
+            asyncio.create_task(_run_task("fund_source",
+                _timed(self.analyze_buyer_fund_source(pair_address, token_address), "fund_source"))),
+            asyncio.create_task(_run_task("retention",
+                _timed(self.check_deployer_token_retention(token_address, deployer_address), "retention"))),
+            asyncio.create_task(_run_task("observation",
+                _timed(self.analyze_observation(token_address, pair_address, initial_state), "observation"))),
+            asyncio.create_task(_run_task("gmgn_stat",
+                _timed(asyncio.wait_for(self.check_gmgn_token_stat(token_address), timeout=3.0), "gmgn_stat"))),
+            asyncio.create_task(_run_task("price_behavior",
+                _timed(asyncio.wait_for(self.check_price_behavior(token_address), timeout=3.0), "price_behavior"))),
+            asyncio.create_task(_run_task("holder_struct",
+                _timed(asyncio.wait_for(self.check_holder_structure(token_address), timeout=3.0), "holder_struct"))),
+            asyncio.create_task(_run_task("price_sanity",
+                _timed(self.check_price_sanity(token_address, pair_address), "price_sanity"))),
+            asyncio.create_task(_run_task("sell_feasibility",
+                _timed(asyncio.wait_for(self.check_sell_feasibility(token_address, pair_address), timeout=5.0), "sell_feasibility"))),
+        ]
+
+        async def _cancel_on_reject():
+            await reject_event.wait()
+            for t in all_tasks:
+                if not t.done():
+                    t.cancel()
+
+        cancel_watcher = asyncio.create_task(_cancel_on_reject())
+        await asyncio.gather(*all_tasks, return_exceptions=True)
+        cancel_watcher.cancel()
+        try:
+            await cancel_watcher
+        except asyncio.CancelledError:
+            pass
+
         perf_stats["gather_total"] = (time.perf_counter()-t_perf)*1000
         logger.info(f"⏱️ 全并行总耗时: {perf_stats['gather_total']:.0f}ms")
 
-        def _unwrap(val, default):
-            if isinstance(val, Exception):
-                logger.error(f"安全检测子任务异常: {val}")
+        def _unwrap(name: str, default):
+            val = result_container.get(name)
+            if val is None:
                 return default
-            return val if val is not None else default
+            if isinstance(val, Exception):
+                logger.error(f"安全检测子任务异常 [{name}]: {val}")
+                return default
+            return val
 
-        local_data        = _unwrap(raw_results[0], {})
-        goplus_data       = _unwrap(raw_results[1], {})
-        honeypot_data     = _unwrap(raw_results[2], {})
-        gmgn_data         = _unwrap(raw_results[3], {})
-        contract_data     = _unwrap(raw_results[4], {})
-        holders_data      = _unwrap(raw_results[5], {})
-        deployer_data     = _unwrap(raw_results[6], {})
-        similarity_reason = _unwrap(raw_results[7], None)
-        fund_source_data  = _unwrap(raw_results[8], {})
-        retention_data    = _unwrap(raw_results[9], {})
-        observation_data  = _unwrap(raw_results[10], {})
-        gmgn_stat_data    = _unwrap(raw_results[11], {})
-        price_beh_data    = _unwrap(raw_results[12], {})
-        holder_stru_data  = _unwrap(raw_results[13], {})
-        price_sanity_data = _unwrap(raw_results[14], {})
-        sell_feas_data    = _unwrap(raw_results[15], {})
+        local_data        = _unwrap("local_checks", {})
+        goplus_data       = _unwrap("goplus", {})
+        honeypot_data     = _unwrap("honeypot", {})
+        gmgn_data         = _unwrap("gmgn", {})
+        contract_data     = _unwrap("contract", {})
+        holders_data      = _unwrap("holders", {})
+        deployer_data     = _unwrap("deployer", {})
+        similarity_reason = _unwrap("similarity", None)
+        fund_source_data  = _unwrap("fund_source", {})
+        retention_data    = _unwrap("retention", {})
+        observation_data  = _unwrap("observation", {})
+        gmgn_stat_data    = _unwrap("gmgn_stat", {})
+        price_beh_data    = _unwrap("price_behavior", {})
+        holder_stru_data  = _unwrap("holder_struct", {})
+        price_sanity_data = _unwrap("price_sanity", {})
+        sell_feas_data    = _unwrap("sell_feasibility", {})
 
         # [PERF] Extract simulator timing
         if "sim_timing" in local_data:

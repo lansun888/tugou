@@ -196,25 +196,25 @@ class TradingBot:
 
     async def _print_perf_report(self, token_address, perf_stats, total_time_ms):
         """Print structured performance report and update summary stats"""
-        # Fill missing keys with 0
-        keys = ["gmgn_security", "goplus", "honeypot_is", "price_sanity", "sell_feasibility", "local_simulator", "gather_total", "pre_buy_check"]
-        for k in keys:
-            if k not in perf_stats: perf_stats[k] = 0
-
-        # Print Report
-        report = (
-            f"\n[PERF] token={token_address}\n"
-            f"  gmgn_security:      {perf_stats['gmgn_security']:.0f}ms\n"
-            f"  goplus:             {perf_stats['goplus']:.0f}ms\n"
-            f"  honeypot_is:        {perf_stats['honeypot_is']:.0f}ms\n"
-            f"  price_sanity:       {perf_stats['price_sanity']:.0f}ms\n"
-            f"  sell_feasibility:   {perf_stats['sell_feasibility']:.0f}ms\n"
-            f"  local_simulator:    {perf_stats['local_simulator']:.0f}ms\n"
-            f"  gather_total:       {perf_stats['gather_total']:.0f}ms  ← 并行总耗时\n"
-            f"  pre_buy_check:      {perf_stats['pre_buy_check']:.0f}ms\n"
-            f"  ──────────────────────────\n"
-            f"  全流程总耗时:        {total_time_ms:.0f}ms\n"
+        # 汇总指标（单独显示）
+        summary_keys = {"gather_total", "pre_buy_check", "local_simulator"}
+        # 任务指标：按耗时降序排列，找出真正的瓶颈
+        task_keys = sorted(
+            [k for k in perf_stats if k not in summary_keys],
+            key=lambda k: perf_stats.get(k, 0), reverse=True
         )
+
+        report = f"\n[PERF] token={token_address}\n"
+        for k in task_keys:
+            v = perf_stats.get(k, 0)
+            marker = " ← SLOW!" if v > 2000 else ""
+            report += f"  {k:<20} {v:>6.0f}ms{marker}\n"
+        report += f"  {'─'*35}\n"
+        report += f"  {'local_simulator':<20} {perf_stats.get('local_simulator', 0):>6.0f}ms\n"
+        report += f"  {'gather_total':<20} {perf_stats.get('gather_total', 0):>6.0f}ms  ← 并行总耗时\n"
+        report += f"  {'pre_buy_check':<20} {perf_stats.get('pre_buy_check', 0):>6.0f}ms\n"
+        report += f"  {'─'*35}\n"
+        report += f"  {'全流程总耗时':<18} {total_time_ms:>6.0f}ms\n"
         logger.info(report)
 
         # Update History
@@ -227,26 +227,29 @@ class TradingBot:
     async def _print_perf_summary(self):
         """Print summary statistics for the last 10 tokens"""
         if not self.perf_history: return
-        
+
         count = len(self.perf_history)
-        keys = self.perf_history[0].keys()
-        
-        summary = "\n[PERF SUMMARY] Last 10 Tokens:\n"
+        # 收集所有出现过的 key
+        all_keys = set()
+        for p in self.perf_history:
+            all_keys.update(p.keys())
+        # 按平均耗时降序排列
+        def _avg(k):
+            vals = [p.get(k, 0) for p in self.perf_history]
+            return sum(vals) / len(vals) if vals else 0
+        sorted_keys = sorted(all_keys, key=_avg, reverse=True)
+
+        summary = f"\n[PERF SUMMARY] Last {count} Tokens:\n"
         summary += f"{'Function':<20} {'Avg(ms)':<10} {'Max(ms)':<10} {'Timeouts'}\n"
         summary += "─"*50 + "\n"
-        
-        for k in keys:
-            values = [p[k] for p in self.perf_history]
+
+        for k in sorted_keys:
+            values = [p.get(k, 0) for p in self.perf_history]
             avg_val = sum(values) / count
             max_val = max(values)
-            # Assuming timeout if value is very close to timeout threshold (e.g. 3000ms for some)
-            # Or explicitly tracked. For now, just show stats.
-            # We don't track explicit timeouts in perf_stats (they return 0 or partial).
-            # We can infer timeout if value > 2900 for 3s timeout tasks.
-            timeouts = sum(1 for v in values if v > 2900) 
-            
+            timeouts = sum(1 for v in values if v > 2900)
             summary += f"{k:<20} {avg_val:<10.0f} {max_val:<10.0f} {timeouts}\n"
-            
+
         logger.info(summary)
 
     async def process_single_pair(self, pair_data):

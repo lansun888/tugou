@@ -18195,3 +18195,1131 @@ connector: <aiohttp.connector.TCPConnector object at 0x000002B013C820C0>
 2026-03-11 16:11:56,125 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 5 subscriptions. Processing as FIFO.
 2026-03-11 16:11:56,271 | WARNING  | utils.dexscreener_client:get_batch_prices:84 - DexScreener batch fetch failed: 
 2026-03-11 16:11:59,006 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 6 subscriptions. Processing as FIFO.
+2026-03-11 16:12:01,086 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 5 subscriptions. Processing as FIFO.
+2026-03-11 16:12:02,965 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 8 subscriptions. Processing as FIFO.
+2026-03-11 16:12:05,627 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 9 subscriptions. Processing as FIFO.
+2026-03-11 16:12:07,989 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 10 subscriptions. Processing as FIFO.
+2026-03-11 16:12:10,422 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 9 subscriptions. Processing as FIFO.
+2026-03-11 16:12:12,317 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 9 subscriptions. Processing as FIFO.
+2026-03-11 16:12:19,100 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 10 subscriptions. Processing as FIFO.
+2026-03-11 16:12:19,217 | INFO     | uvicorn.access:send:480 - 127.0.0.1:50391 - "GET /api/status HTTP/1.1" 200
+2026-03-11 16:12:21,759 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 11 subscriptions. Processing as FIFO.
+2026-03-11 16:12:23,438 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 12 subscriptions. Processing as FIFO.
+2026-03-11 16:12:25,541 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 11 subscriptions. Processing as FIFO.
+2026-03-11 16:12:27,835 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 13 subscriptions. Processing as FIFO.
+2026-03-11 16:12:29,431 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 13 subscriptions. Processing as FIFO.
+2026-03-11 16:12:31,349 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 15 subscriptions. Processing as FIFO.
+2026-03-11 16:12:33,070 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 14 subscriptions. Processing as FIFO.
+2026-03-11 16:12:36,244 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 14 subscriptions. Processing as FIFO.
+2026-03-11 16:12:38,129 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 15 subscriptions. Processing as FIFO.
+2026-03-11 16:12:40,279 | WARNING  | utils.dexscreener_client:get_batch_prices:84 - DexScreener batch fetch failed: 
+2026-03-11 16:12:40,296 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 14 subscriptions. Processing as FIFO.
+2026-03-11 16:12:42,676 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 14 subscriptions. Processing as FIFO.
+2026-03-11 16:12:46,480 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 17 subscriptions. Processing as FIFO.
+2026-03-11 16:12:51,384 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 17 subscriptions. Processing as FIFO.
+2026-03-11 16:12:54,708 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 20 subscriptions. Processing as FIFO.
+2026-03-11 16:12:56,281 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 20 subscriptions. Processing as FIFO.
+2026-03-11 16:12:59,676 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 21 subscriptions. Processing as FIFO.
+2026-03-11 16:13:02,687 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 20 subscriptions. Processing as FIFO.
+2026-03-11 16:13:04,556 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 19 subscriptions. Processing as FIFO.
+2026-03-11 16:13:06,943 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 20 subscriptions. Processing as FIFO.
+2026-03-11 16:13:08,906 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 21 subscriptions. Processing as FIFO.
+2026-03-11 16:13:14,812 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 22 subscriptions. Processing as FIFO.
+2026-03-11 16:13:18,101 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 23 subscriptions. Processing as FIFO.
+2026-03-11 16:13:19,459 | INFO     | uvicorn.access:send:480 - 127.0.0.1:51394 - "GET /api/status HTTP/1.1" 200
+2026-03-11 16:13:20,047 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 23 subscriptions. Processing as FIFO.
+2026-03-11 16:13:21,876 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 22 subscriptions. Processing as FIFO.
+2026-03-11 16:13:23,999 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 23 subscriptions. Processing as FIFO.
+2026-03-11 16:13:25,282 | WARNING  | utils.dexscreener_client:get_batch_prices:84 - DexScreener batch fetch failed: 
+2026-03-11 16:13:26,537 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 24 subscriptions. Processing as FIFO.
+2026-03-11 16:13:26,957 | INFO     | bsc_bot.analyzer.local_simulator:find_allowance_slot:193 - Found allowance slot for 0x9CD1675EcEe106CA04D9A392F024620c92094444: 1
+2026-03-11 16:13:28,125 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 25 subscriptions. Processing as FIFO.
+2026-03-11 16:13:32,134 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 24 subscriptions. Processing as FIFO.
+2026-03-11 16:13:33,932 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 25 subscriptions. Processing as FIFO.
+2026-03-11 16:13:36,652 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 25 subscriptions. Processing as FIFO.
+2026-03-11 16:13:38,419 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 26 subscriptions. Processing as FIFO.
+2026-03-11 16:13:40,541 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 26 subscriptions. Processing as FIFO.
+2026-03-11 16:13:42,772 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 25 subscriptions. Processing as FIFO.
+2026-03-11 16:13:45,308 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 25 subscriptions. Processing as FIFO.
+2026-03-11 16:13:47,085 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 25 subscriptions. Processing as FIFO.
+2026-03-11 16:13:48,734 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 24 subscriptions. Processing as FIFO.
+2026-03-11 16:13:50,344 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 26 subscriptions. Processing as FIFO.
+2026-03-11 16:13:52,186 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 27 subscriptions. Processing as FIFO.
+2026-03-11 16:13:54,729 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 26 subscriptions. Processing as FIFO.
+2026-03-11 16:13:56,695 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 25 subscriptions. Processing as FIFO.
+2026-03-11 16:14:09,167 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 30 subscriptions. Processing as FIFO.
+2026-03-11 16:14:11,482 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 32 subscriptions. Processing as FIFO.
+2026-03-11 16:14:13,267 | WARNING  | utils.dexscreener_client:get_batch_prices:84 - DexScreener batch fetch failed: 
+2026-03-11 16:14:14,968 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 33 subscriptions. Processing as FIFO.
+2026-03-11 16:14:18,122 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 33 subscriptions. Processing as FIFO.
+2026-03-11 16:14:19,140 | INFO     | uvicorn.access:send:480 - 127.0.0.1:51400 - "GET /api/status HTTP/1.1" 200
+2026-03-11 16:14:21,916 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 36 subscriptions. Processing as FIFO.
+2026-03-11 16:14:24,239 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 35 subscriptions. Processing as FIFO.
+2026-03-11 16:14:27,122 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 35 subscriptions. Processing as FIFO.
+2026-03-11 16:14:31,040 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 34 subscriptions. Processing as FIFO.
+2026-03-11 16:14:36,743 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 40 subscriptions. Processing as FIFO.
+2026-03-11 16:14:38,647 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 41 subscriptions. Processing as FIFO.
+2026-03-11 16:14:41,425 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 40 subscriptions. Processing as FIFO.
+2026-03-11 16:14:44,345 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 41 subscriptions. Processing as FIFO.
+2026-03-11 16:14:46,294 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 40 subscriptions. Processing as FIFO.
+2026-03-11 16:14:49,017 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 41 subscriptions. Processing as FIFO.
+2026-03-11 16:14:50,670 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 40 subscriptions. Processing as FIFO.
+2026-03-11 16:14:52,528 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 40 subscriptions. Processing as FIFO.
+2026-03-11 16:14:54,457 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 42 subscriptions. Processing as FIFO.
+2026-03-11 16:14:56,056 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 42 subscriptions. Processing as FIFO.
+2026-03-11 16:14:56,275 | WARNING  | utils.dexscreener_client:get_batch_prices:84 - DexScreener batch fetch failed: 
+2026-03-11 16:14:57,607 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 42 subscriptions. Processing as FIFO.
+2026-03-11 16:15:01,928 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 41 subscriptions. Processing as FIFO.
+2026-03-11 16:15:03,799 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 41 subscriptions. Processing as FIFO.
+2026-03-11 16:15:06,328 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 41 subscriptions. Processing as FIFO.
+2026-03-11 16:15:08,347 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 40 subscriptions. Processing as FIFO.
+2026-03-11 16:15:10,286 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 40 subscriptions. Processing as FIFO.
+2026-03-11 16:15:11,691 | INFO     | bsc_bot.analyzer.local_simulator:find_allowance_slot:193 - Found allowance slot for 0xe1FA71796f175df08ff3e1D134189365c4A8A276: 1
+2026-03-11 16:15:12,027 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 41 subscriptions. Processing as FIFO.
+2026-03-11 16:15:14,076 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 41 subscriptions. Processing as FIFO.
+2026-03-11 16:15:14,685 | INFO     | bsc_bot.analyzer.local_simulator:find_allowance_slot:193 - Found allowance slot for 0xe1FA71796f175df08ff3e1D134189365c4A8A276: 1
+2026-03-11 16:15:17,562 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 43 subscriptions. Processing as FIFO.
+2026-03-11 16:15:19,064 | INFO     | bsc_bot.analyzer.local_simulator:find_allowance_slot:193 - Found allowance slot for 0x5440C472fb363A62854700a6eae32a3f20D13Dfc: 1
+2026-03-11 16:15:19,475 | INFO     | uvicorn.access:send:480 - 127.0.0.1:52737 - "GET /api/status HTTP/1.1" 200
+2026-03-11 16:15:20,267 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 44 subscriptions. Processing as FIFO.
+2026-03-11 16:15:21,838 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 43 subscriptions. Processing as FIFO.
+2026-03-11 16:15:23,655 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 44 subscriptions. Processing as FIFO.
+2026-03-11 16:15:26,416 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 46 subscriptions. Processing as FIFO.
+2026-03-11 16:15:28,104 | INFO     | bsc_bot.analyzer.local_simulator:find_allowance_slot:193 - Found allowance slot for 0x5440C472fb363A62854700a6eae32a3f20D13Dfc: 1
+2026-03-11 16:15:28,141 | INFO     | web3.providers.WebSocketProvider:connect:232 - Connecting to: wss://bsc-mainnet.nodereal.io/ws/v1/64a9df0874fb4a93b9d0a3849de012d3
+2026-03-11 16:15:28,384 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 46 subscriptions. Processing as FIFO.
+2026-03-11 16:15:28,972 | INFO     | web3.providers.WebSocketProvider:connect:240 - Successfully connected to: wss://bsc-mainnet.nodereal.io/ws/v1/64a9df0874fb4a93b9d0a3849de012d3
+2026-03-11 16:15:28,974 | INFO     | web3.providers.WebSocketProvider:_message_listener:408 - WebSocketProvider listener background task started. Storing all messages in appropriate request processor queues / caches to be processed.
+2026-03-11 16:15:29,194 | INFO     | web3.providers.persistent.subscription_manager:subscribe:163 - Successfully subscribed to subscription:
+    label: LogsSubscription('logs', {'address': '0x5c0D0B3D87C2Ed45E094e3579bf9960E9810bDcd', 'topics': ['0xd78ad95fa46c994b6551d0da85fc275fe613ce37657fb8d5e3d130840159d822']})
+    id: 0xfb21d2c5c48733130ddf1169984ce672
+2026-03-11 16:15:29,643 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:329 - Subscription response queue synced with websocket message stream.
+2026-03-11 16:15:31,682 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 45 subscriptions. Processing as FIFO.
+2026-03-11 16:15:33,626 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 44 subscriptions. Processing as FIFO.
+2026-03-11 16:15:36,032 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 34 subscriptions. Processing as FIFO.
+2026-03-11 16:15:36,228 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 47 subscriptions. Processing as FIFO.
+2026-03-11 16:15:37,885 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 38 subscriptions. Processing as FIFO.
+2026-03-11 16:15:38,283 | WARNING  | utils.dexscreener_client:get_batch_prices:84 - DexScreener batch fetch failed: 
+2026-03-11 16:15:38,287 | WARNING  | utils.dexscreener_client:get_token_data:40 - DexScreener fetch failed for 0x5440C472fb363A62854700a6eae32a3f20D13Dfc: 
+2026-03-11 16:15:38,550 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 47 subscriptions. Processing as FIFO.
+2026-03-11 16:15:39,773 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 52 subscriptions. Processing as FIFO.
+2026-03-11 16:15:40,406 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 46 subscriptions. Processing as FIFO.
+2026-03-11 16:15:41,633 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 60 subscriptions. Processing as FIFO.
+2026-03-11 16:15:42,273 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 47 subscriptions. Processing as FIFO.
+2026-03-11 16:15:43,292 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 65 subscriptions. Processing as FIFO.
+2026-03-11 16:15:44,747 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 48 subscriptions. Processing as FIFO.
+2026-03-11 16:15:45,265 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 82 subscriptions. Processing as FIFO.
+2026-03-11 16:15:47,017 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 86 subscriptions. Processing as FIFO.
+2026-03-11 16:15:47,509 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 52 subscriptions. Processing as FIFO.
+2026-03-11 16:15:48,809 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 98 subscriptions. Processing as FIFO.
+2026-03-11 16:15:49,250 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 51 subscriptions. Processing as FIFO.
+2026-03-11 16:15:50,364 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 104 subscriptions. Processing as FIFO.
+2026-03-11 16:15:51,480 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 50 subscriptions. Processing as FIFO.
+2026-03-11 16:15:51,931 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 105 subscriptions. Processing as FIFO.
+2026-03-11 16:15:53,580 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 118 subscriptions. Processing as FIFO.
+2026-03-11 16:15:53,606 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 49 subscriptions. Processing as FIFO.
+2026-03-11 16:15:56,930 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 119 subscriptions. Processing as FIFO.
+2026-03-11 16:15:58,861 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 129 subscriptions. Processing as FIFO.
+2026-03-11 16:16:00,568 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 130 subscriptions. Processing as FIFO.
+2026-03-11 16:16:02,083 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 133 subscriptions. Processing as FIFO.
+2026-03-11 16:16:03,915 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 132 subscriptions. Processing as FIFO.
+2026-03-11 16:16:04,043 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 51 subscriptions. Processing as FIFO.
+2026-03-11 16:16:05,409 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 131 subscriptions. Processing as FIFO.
+2026-03-11 16:16:06,643 | INFO     | web3.providers.WebSocketProvider:disconnect:267 - Message listener background task successfully shut down.
+2026-03-11 16:16:06,789 | INFO     | web3.providers.WebSocketProvider:disconnect:271 - Successfully disconnected from: wss://bsc-mainnet.nodereal.io/ws/v1/64a9df0874fb4a93b9d0a3849de012d3
+2026-03-11 16:16:07,067 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 131 subscriptions. Processing as FIFO.
+2026-03-11 16:16:10,306 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 131 subscriptions. Processing as FIFO.
+2026-03-11 16:16:13,116 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 131 subscriptions. Processing as FIFO.
+2026-03-11 16:16:14,982 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 131 subscriptions. Processing as FIFO.
+2026-03-11 16:16:16,994 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 131 subscriptions. Processing as FIFO.
+2026-03-11 16:16:19,146 | INFO     | uvicorn.access:send:480 - 127.0.0.1:52742 - "GET /api/status HTTP/1.1" 200
+2026-03-11 16:16:19,516 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 132 subscriptions. Processing as FIFO.
+2026-03-11 16:16:21,390 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 132 subscriptions. Processing as FIFO.
+2026-03-11 16:16:22,284 | WARNING  | utils.dexscreener_client:get_batch_prices:84 - DexScreener batch fetch failed: 
+2026-03-11 16:16:23,920 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 135 subscriptions. Processing as FIFO.
+2026-03-11 16:16:25,570 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 134 subscriptions. Processing as FIFO.
+2026-03-11 16:16:27,415 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 133 subscriptions. Processing as FIFO.
+2026-03-11 16:16:30,260 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 133 subscriptions. Processing as FIFO.
+2026-03-11 16:16:32,171 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 133 subscriptions. Processing as FIFO.
+2026-03-11 16:16:33,899 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 133 subscriptions. Processing as FIFO.
+2026-03-11 16:16:36,852 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 133 subscriptions. Processing as FIFO.
+2026-03-11 16:16:39,129 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 133 subscriptions. Processing as FIFO.
+2026-03-11 16:16:40,841 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 132 subscriptions. Processing as FIFO.
+2026-03-11 16:16:42,656 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 132 subscriptions. Processing as FIFO.
+2026-03-11 16:16:44,390 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 133 subscriptions. Processing as FIFO.
+2026-03-11 16:16:45,949 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 135 subscriptions. Processing as FIFO.
+2026-03-11 16:16:47,588 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 135 subscriptions. Processing as FIFO.
+2026-03-11 16:16:49,757 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 135 subscriptions. Processing as FIFO.
+2026-03-11 16:16:51,547 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 136 subscriptions. Processing as FIFO.
+2026-03-11 16:16:53,329 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 136 subscriptions. Processing as FIFO.
+2026-03-11 16:16:54,872 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 140 subscriptions. Processing as FIFO.
+2026-03-11 16:16:56,576 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 140 subscriptions. Processing as FIFO.
+2026-03-11 16:16:59,225 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 140 subscriptions. Processing as FIFO.
+2026-03-11 16:17:01,075 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 140 subscriptions. Processing as FIFO.
+2026-03-11 16:17:03,666 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 141 subscriptions. Processing as FIFO.
+2026-03-11 16:17:05,727 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 141 subscriptions. Processing as FIFO.
+2026-03-11 16:17:07,618 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 140 subscriptions. Processing as FIFO.
+2026-03-11 16:17:08,273 | WARNING  | utils.dexscreener_client:get_batch_prices:84 - DexScreener batch fetch failed: 
+2026-03-11 16:17:10,390 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 140 subscriptions. Processing as FIFO.
+2026-03-11 16:17:12,056 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 141 subscriptions. Processing as FIFO.
+2026-03-11 16:17:14,138 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 141 subscriptions. Processing as FIFO.
+2026-03-11 16:17:16,622 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 142 subscriptions. Processing as FIFO.
+2026-03-11 16:17:18,552 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 141 subscriptions. Processing as FIFO.
+2026-03-11 16:17:19,463 | INFO     | uvicorn.access:send:480 - 127.0.0.1:53793 - "GET /api/status HTTP/1.1" 200
+2026-03-11 16:17:22,029 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 140 subscriptions. Processing as FIFO.
+2026-03-11 16:17:23,725 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 140 subscriptions. Processing as FIFO.
+2026-03-11 16:17:26,831 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 140 subscriptions. Processing as FIFO.
+2026-03-11 16:17:29,081 | INFO     | bsc_bot.analyzer.local_simulator:find_allowance_slot:193 - Found allowance slot for 0x12EBFdE3F069399Dbf03E2050cF5Ea55e59b5Bbb: 1
+2026-03-11 16:17:30,050 | INFO     | bsc_bot.analyzer.local_simulator:find_balance_slot:135 - Found balance slot for 0x12EBFdE3F069399Dbf03E2050cF5Ea55e59b5Bbb: 0
+2026-03-11 16:17:35,321 | INFO     | bsc_bot.analyzer.local_simulator:find_balance_slot:135 - Found balance slot for 0x12EBFdE3F069399Dbf03E2050cF5Ea55e59b5Bbb: 0
+2026-03-11 16:17:38,035 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 150 subscriptions. Processing as FIFO.
+2026-03-11 16:17:39,747 | INFO     | bsc_bot.analyzer.local_simulator:find_allowance_slot:193 - Found allowance slot for 0x12EBFdE3F069399Dbf03E2050cF5Ea55e59b5Bbb: 1
+2026-03-11 16:17:40,744 | INFO     | web3.providers.WebSocketProvider:disconnect:267 - Message listener background task successfully shut down.
+2026-03-11 16:17:40,887 | INFO     | web3.providers.WebSocketProvider:disconnect:271 - Successfully disconnected from: wss://bsc-mainnet.nodereal.io/ws/v1/64a9df0874fb4a93b9d0a3849de012d3
+2026-03-11 16:18:19,135 | INFO     | uvicorn.access:send:480 - 127.0.0.1:53798 - "OPTIONS /api/status HTTP/1.1" 200
+2026-03-11 16:18:19,147 | INFO     | uvicorn.access:send:480 - 127.0.0.1:53798 - "GET /api/status HTTP/1.1" 200
+2026-03-11 16:19:19,448 | INFO     | uvicorn.access:send:480 - 127.0.0.1:54760 - "GET /api/status HTTP/1.1" 200
+2026-03-11 16:19:52,448 | INFO     | uvicorn.access:send:480 - 127.0.0.1:54762 - "GET /api/status HTTP/1.1" 200
+2026-03-11 16:19:53,663 | INFO     | uvicorn.access:send:480 - 127.0.0.1:54762 - "OPTIONS /api/positions HTTP/1.1" 200
+2026-03-11 16:19:53,669 | INFO     | uvicorn.access:send:480 - 127.0.0.1:54762 - "OPTIONS /api/positions HTTP/1.1" 200
+2026-03-11 16:19:53,674 | INFO     | uvicorn.access:send:480 - 127.0.0.1:54762 - "GET /api/positions HTTP/1.1" 200
+2026-03-11 16:19:53,685 | INFO     | uvicorn.access:send:480 - 127.0.0.1:54762 - "GET /api/positions HTTP/1.1" 200
+2026-03-11 16:19:53,963 | INFO     | uvicorn.error:asgi_send:270 - 127.0.0.1:54981 - "WebSocket /ws/prices?api_key=tugou_secret_key" [accepted]
+2026-03-11 16:19:53,963 | INFO     | uvicorn.error:asgi_send:270 - 127.0.0.1:54981 - "WebSocket /ws/prices?api_key=tugou_secret_key" [accepted]
+2026-03-11 16:19:53,964 | INFO     | uvicorn.error:handshake:643 - connection open
+2026-03-11 16:19:53,964 | INFO     | uvicorn.error:handshake:643 - connection open
+2026-03-11 16:19:54,456 | INFO     | uvicorn.error:handler:264 - connection closed
+2026-03-11 16:19:54,456 | INFO     | uvicorn.error:handler:264 - connection closed
+2026-03-11 16:19:54,459 | INFO     | uvicorn.access:send:480 - 127.0.0.1:54762 - "OPTIONS /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 16:19:54,461 | INFO     | uvicorn.access:send:480 - 127.0.0.1:54982 - "OPTIONS /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 16:19:54,534 | INFO     | uvicorn.access:send:480 - 127.0.0.1:54982 - "GET /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 16:19:54,567 | INFO     | uvicorn.access:send:480 - 127.0.0.1:54762 - "GET /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 16:19:54,992 | INFO     | uvicorn.access:send:480 - 127.0.0.1:54762 - "GET /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 16:19:56,231 | INFO     | uvicorn.access:send:480 - 127.0.0.1:54762 - "GET /api/positions HTTP/1.1" 200
+2026-03-11 16:19:56,233 | INFO     | uvicorn.access:send:480 - 127.0.0.1:54982 - "GET /api/positions HTTP/1.1" 200
+2026-03-11 16:19:56,535 | INFO     | uvicorn.error:asgi_send:270 - 127.0.0.1:54993 - "WebSocket /ws/prices?api_key=tugou_secret_key" [accepted]
+2026-03-11 16:19:56,535 | INFO     | uvicorn.error:asgi_send:270 - 127.0.0.1:54993 - "WebSocket /ws/prices?api_key=tugou_secret_key" [accepted]
+2026-03-11 16:19:56,536 | INFO     | uvicorn.error:handshake:643 - connection open
+2026-03-11 16:19:56,536 | INFO     | uvicorn.error:handshake:643 - connection open
+2026-03-11 16:19:56,975 | INFO     | uvicorn.error:handler:264 - connection closed
+2026-03-11 16:19:56,975 | INFO     | uvicorn.error:handler:264 - connection closed
+2026-03-11 16:19:57,010 | INFO     | uvicorn.access:send:480 - 127.0.0.1:54982 - "GET /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 16:19:57,045 | INFO     | uvicorn.access:send:480 - 127.0.0.1:54762 - "GET /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 16:19:57,520 | INFO     | uvicorn.access:send:480 - 127.0.0.1:54762 - "GET /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 16:20:03,282 | INFO     | uvicorn.access:send:480 - 127.0.0.1:54983 - "GET /api/positions HTTP/1.1" 200
+2026-03-11 16:20:03,284 | INFO     | uvicorn.access:send:480 - 127.0.0.1:54983 - "GET /api/positions HTTP/1.1" 200
+2026-03-11 16:20:03,583 | INFO     | uvicorn.error:asgi_send:270 - 127.0.0.1:55034 - "WebSocket /ws/prices?api_key=tugou_secret_key" [accepted]
+2026-03-11 16:20:03,583 | INFO     | uvicorn.error:asgi_send:270 - 127.0.0.1:55034 - "WebSocket /ws/prices?api_key=tugou_secret_key" [accepted]
+2026-03-11 16:20:03,584 | INFO     | uvicorn.error:handshake:643 - connection open
+2026-03-11 16:20:03,584 | INFO     | uvicorn.error:handshake:643 - connection open
+2026-03-11 16:20:04,011 | INFO     | uvicorn.error:handler:264 - connection closed
+2026-03-11 16:20:04,011 | INFO     | uvicorn.error:handler:264 - connection closed
+2026-03-11 16:20:04,018 | INFO     | uvicorn.access:send:480 - 127.0.0.1:54983 - "OPTIONS /api/trades?page=1&limit=500 HTTP/1.1" 200
+2026-03-11 16:20:04,021 | INFO     | uvicorn.access:send:480 - 127.0.0.1:54983 - "OPTIONS /api/trades?page=1&limit=500 HTTP/1.1" 200
+2026-03-11 16:20:04,049 | INFO     | uvicorn.access:send:480 - 127.0.0.1:54983 - "GET /api/trades?page=1&limit=500 HTTP/1.1" 200
+2026-03-11 16:20:04,056 | INFO     | uvicorn.access:send:480 - 127.0.0.1:55035 - "GET /api/status HTTP/1.1" 200
+2026-03-11 16:20:04,083 | INFO     | uvicorn.access:send:480 - 127.0.0.1:54983 - "GET /api/trades?page=1&limit=500 HTTP/1.1" 200
+2026-03-11 16:20:04,099 | INFO     | uvicorn.access:send:480 - 127.0.0.1:55035 - "GET /api/status HTTP/1.1" 200
+2026-03-11 16:20:09,327 | INFO     | uvicorn.access:send:480 - 127.0.0.1:55046 - "GET /api/positions HTTP/1.1" 200
+2026-03-11 16:20:09,329 | INFO     | uvicorn.access:send:480 - 127.0.0.1:55045 - "GET /api/positions HTTP/1.1" 200
+2026-03-11 16:20:09,629 | INFO     | uvicorn.error:asgi_send:270 - 127.0.0.1:55081 - "WebSocket /ws/prices?api_key=tugou_secret_key" [accepted]
+2026-03-11 16:20:09,629 | INFO     | uvicorn.error:asgi_send:270 - 127.0.0.1:55081 - "WebSocket /ws/prices?api_key=tugou_secret_key" [accepted]
+2026-03-11 16:20:09,629 | INFO     | uvicorn.error:handshake:643 - connection open
+2026-03-11 16:20:09,629 | INFO     | uvicorn.error:handshake:643 - connection open
+2026-03-11 16:20:09,924 | INFO     | uvicorn.error:handler:264 - connection closed
+2026-03-11 16:20:09,924 | INFO     | uvicorn.error:handler:264 - connection closed
+2026-03-11 16:20:09,961 | INFO     | uvicorn.access:send:480 - 127.0.0.1:55045 - "GET /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 16:20:09,997 | INFO     | uvicorn.access:send:480 - 127.0.0.1:55046 - "GET /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 16:20:10,463 | INFO     | uvicorn.access:send:480 - 127.0.0.1:55046 - "GET /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 16:20:14,775 | INFO     | uvicorn.access:send:480 - 127.0.0.1:55047 - "OPTIONS /api/simulation/stats?days=7 HTTP/1.1" 200
+2026-03-11 16:20:14,776 | INFO     | uvicorn.access:send:480 - 127.0.0.1:55048 - "OPTIONS /api/stats/daily?days=7 HTTP/1.1" 200
+2026-03-11 16:20:14,777 | INFO     | uvicorn.access:send:480 - 127.0.0.1:55045 - "OPTIONS /api/stats/daily?days=7 HTTP/1.1" 200
+2026-03-11 16:20:14,778 | INFO     | uvicorn.access:send:480 - 127.0.0.1:55047 - "OPTIONS /api/simulation/stats?days=7 HTTP/1.1" 200
+2026-03-11 16:20:14,811 | INFO     | uvicorn.access:send:480 - 127.0.0.1:55045 - "GET /api/simulation/stats?days=7 HTTP/1.1" 200
+2026-03-11 16:20:14,813 | INFO     | uvicorn.access:send:480 - 127.0.0.1:55048 - "GET /api/stats/daily?days=7 HTTP/1.1" 200
+2026-03-11 16:20:14,816 | INFO     | uvicorn.access:send:480 - 127.0.0.1:55046 - "GET /api/status HTTP/1.1" 200
+2026-03-11 16:20:14,847 | INFO     | uvicorn.access:send:480 - 127.0.0.1:55047 - "GET /api/simulation/stats?days=7 HTTP/1.1" 200
+2026-03-11 16:20:14,850 | INFO     | uvicorn.access:send:480 - 127.0.0.1:55045 - "GET /api/stats/daily?days=7 HTTP/1.1" 200
+2026-03-11 16:20:14,860 | INFO     | uvicorn.access:send:480 - 127.0.0.1:55048 - "GET /api/status HTTP/1.1" 200
+2026-03-11 16:20:18,893 | INFO     | uvicorn.access:send:480 - 127.0.0.1:55048 - "GET /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 16:20:18,929 | INFO     | uvicorn.access:send:480 - 127.0.0.1:55045 - "GET /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 16:20:19,402 | INFO     | uvicorn.access:send:480 - 127.0.0.1:55045 - "GET /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 16:20:19,568 | INFO     | uvicorn.access:send:480 - 127.0.0.1:55045 - "GET /api/positions HTTP/1.1" 200
+2026-03-11 16:20:19,572 | INFO     | uvicorn.access:send:480 - 127.0.0.1:55048 - "GET /api/positions HTTP/1.1" 200
+2026-03-11 16:20:19,874 | INFO     | uvicorn.error:asgi_send:270 - 127.0.0.1:55147 - "WebSocket /ws/prices?api_key=tugou_secret_key" [accepted]
+2026-03-11 16:20:19,874 | INFO     | uvicorn.error:asgi_send:270 - 127.0.0.1:55147 - "WebSocket /ws/prices?api_key=tugou_secret_key" [accepted]
+2026-03-11 16:20:19,875 | INFO     | uvicorn.error:handshake:643 - connection open
+2026-03-11 16:20:19,875 | INFO     | uvicorn.error:handshake:643 - connection open
+2026-03-11 16:20:20,508 | INFO     | uvicorn.error:handler:264 - connection closed
+2026-03-11 16:20:20,508 | INFO     | uvicorn.error:handler:264 - connection closed
+2026-03-11 16:20:20,531 | INFO     | uvicorn.access:send:480 - 127.0.0.1:55045 - "GET /api/stats/daily?days=7 HTTP/1.1" 200
+2026-03-11 16:20:20,532 | INFO     | uvicorn.access:send:480 - 127.0.0.1:55119 - "GET /api/simulation/stats?days=7 HTTP/1.1" 200
+2026-03-11 16:20:20,536 | INFO     | uvicorn.access:send:480 - 127.0.0.1:55048 - "GET /api/status HTTP/1.1" 200
+2026-03-11 16:20:20,560 | INFO     | uvicorn.access:send:480 - 127.0.0.1:55045 - "GET /api/stats/daily?days=7 HTTP/1.1" 200
+2026-03-11 16:20:20,566 | INFO     | uvicorn.access:send:480 - 127.0.0.1:55119 - "GET /api/simulation/stats?days=7 HTTP/1.1" 200
+2026-03-11 16:20:20,573 | INFO     | uvicorn.access:send:480 - 127.0.0.1:55048 - "GET /api/status HTTP/1.1" 200
+2026-03-11 16:20:25,530 | INFO     | uvicorn.access:send:480 - 127.0.0.1:55048 - "GET /api/status HTTP/1.1" 200
+2026-03-11 16:20:30,021 | INFO     | uvicorn.access:send:480 - 127.0.0.1:55160 - "GET /api/trades?page=1&limit=500 HTTP/1.1" 200
+2026-03-11 16:20:30,026 | INFO     | uvicorn.access:send:480 - 127.0.0.1:55048 - "GET /api/status HTTP/1.1" 200
+2026-03-11 16:20:30,060 | INFO     | uvicorn.access:send:480 - 127.0.0.1:55159 - "GET /api/trades?page=1&limit=500 HTTP/1.1" 200
+2026-03-11 16:20:30,068 | INFO     | uvicorn.access:send:480 - 127.0.0.1:55160 - "GET /api/status HTTP/1.1" 200
+2026-03-11 16:20:37,795 | INFO     | uvicorn.access:send:480 - 127.0.0.1:55161 - "GET /api/positions HTTP/1.1" 200
+2026-03-11 16:20:37,800 | INFO     | uvicorn.access:send:480 - 127.0.0.1:55161 - "GET /api/positions HTTP/1.1" 200
+2026-03-11 16:20:38,098 | INFO     | uvicorn.error:asgi_send:270 - 127.0.0.1:55276 - "WebSocket /ws/prices?api_key=tugou_secret_key" [accepted]
+2026-03-11 16:20:38,098 | INFO     | uvicorn.error:asgi_send:270 - 127.0.0.1:55276 - "WebSocket /ws/prices?api_key=tugou_secret_key" [accepted]
+2026-03-11 16:20:38,099 | INFO     | uvicorn.error:handshake:643 - connection open
+2026-03-11 16:20:38,099 | INFO     | uvicorn.error:handshake:643 - connection open
+2026-03-11 16:20:38,299 | INFO     | uvicorn.error:handler:264 - connection closed
+2026-03-11 16:20:38,299 | INFO     | uvicorn.error:handler:264 - connection closed
+2026-03-11 16:20:38,314 | INFO     | uvicorn.access:send:480 - 127.0.0.1:55277 - "GET /api/stats/daily?days=7 HTTP/1.1" 200
+2026-03-11 16:20:38,318 | INFO     | uvicorn.access:send:480 - 127.0.0.1:55161 - "GET /api/status HTTP/1.1" 200
+2026-03-11 16:20:38,331 | INFO     | uvicorn.access:send:480 - 127.0.0.1:55277 - "GET /api/simulation/stats?days=7 HTTP/1.1" 200
+2026-03-11 16:20:38,335 | INFO     | uvicorn.access:send:480 - 127.0.0.1:55161 - "GET /api/stats/daily?days=7 HTTP/1.1" 200
+2026-03-11 16:20:38,358 | INFO     | uvicorn.access:send:480 - 127.0.0.1:55161 - "GET /api/simulation/stats?days=7 HTTP/1.1" 200
+2026-03-11 16:20:38,362 | INFO     | uvicorn.access:send:480 - 127.0.0.1:55277 - "GET /api/status HTTP/1.1" 200
+2026-03-11 16:20:40,436 | INFO     | uvicorn.access:send:480 - 127.0.0.1:55277 - "OPTIONS /api/config HTTP/1.1" 200
+2026-03-11 16:20:40,438 | INFO     | uvicorn.access:send:480 - 127.0.0.1:55161 - "OPTIONS /api/config HTTP/1.1" 200
+2026-03-11 16:20:40,441 | INFO     | uvicorn.access:send:480 - 127.0.0.1:55277 - "GET /api/config HTTP/1.1" 200
+2026-03-11 16:20:40,443 | INFO     | uvicorn.access:send:480 - 127.0.0.1:55161 - "GET /api/config HTTP/1.1" 200
+2026-03-11 16:22:09,380 | INFO     | bsc_bot.analyzer.local_simulator:find_balance_slot:135 - Found balance slot for 0x1E6151f7C88e1666a7e0547934ec52b76736163E: 0
+2026-03-11 16:22:10,062 | INFO     | bsc_bot.analyzer.local_simulator:find_balance_slot:135 - Found balance slot for 0x1E6151f7C88e1666a7e0547934ec52b76736163E: 0
+2026-03-11 16:22:12,507 | INFO     | bsc_bot.analyzer.local_simulator:find_allowance_slot:193 - Found allowance slot for 0x1E6151f7C88e1666a7e0547934ec52b76736163E: 1
+2026-03-11 16:22:15,212 | INFO     | bsc_bot.analyzer.local_simulator:find_allowance_slot:193 - Found allowance slot for 0x1E6151f7C88e1666a7e0547934ec52b76736163E: 1
+2026-03-11 16:24:44,407 | INFO     | bsc_bot.analyzer.local_simulator:find_allowance_slot:193 - Found allowance slot for 0xBcCA97fD53147285F2213b80634774221E8648BB: 1
+2026-03-11 16:24:46,834 | INFO     | bsc_bot.analyzer.local_simulator:find_balance_slot:135 - Found balance slot for 0xBcCA97fD53147285F2213b80634774221E8648BB: 0
+2026-03-11 16:24:50,140 | INFO     | bsc_bot.analyzer.local_simulator:find_balance_slot:135 - Found balance slot for 0x4482C88eFf8A6D87B8805e1EEA9b65647B7b0686: 0
+2026-03-11 16:24:51,607 | INFO     | bsc_bot.analyzer.local_simulator:find_allowance_slot:193 - Found allowance slot for 0xBcCA97fD53147285F2213b80634774221E8648BB: 1
+2026-03-11 16:24:51,798 | INFO     | bsc_bot.analyzer.local_simulator:find_allowance_slot:193 - Found allowance slot for 0x4482C88eFf8A6D87B8805e1EEA9b65647B7b0686: 1
+2026-03-11 16:24:54,835 | INFO     | bsc_bot.analyzer.local_simulator:find_balance_slot:135 - Found balance slot for 0x4482C88eFf8A6D87B8805e1EEA9b65647B7b0686: 0
+2026-03-11 16:24:55,859 | INFO     | web3.providers.WebSocketProvider:connect:232 - Connecting to: wss://bsc-mainnet.nodereal.io/ws/v1/64a9df0874fb4a93b9d0a3849de012d3
+2026-03-11 16:24:56,514 | INFO     | web3.providers.WebSocketProvider:connect:240 - Successfully connected to: wss://bsc-mainnet.nodereal.io/ws/v1/64a9df0874fb4a93b9d0a3849de012d3
+2026-03-11 16:24:56,515 | INFO     | web3.providers.WebSocketProvider:_message_listener:408 - WebSocketProvider listener background task started. Storing all messages in appropriate request processor queues / caches to be processed.
+2026-03-11 16:24:56,796 | INFO     | web3.providers.persistent.subscription_manager:subscribe:163 - Successfully subscribed to subscription:
+    label: LogsSubscription('logs', {'address': '0x5a6aac15947F2ebb9871A086818b613DDb160399', 'topics': ['0xd78ad95fa46c994b6551d0da85fc275fe613ce37657fb8d5e3d130840159d822']})
+    id: 0x1081d6f86046ae7bf1fe31422d6185b
+2026-03-11 16:24:58,028 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:329 - Subscription response queue synced with websocket message stream.
+2026-03-11 16:24:58,655 | INFO     | bsc_bot.analyzer.local_simulator:find_allowance_slot:193 - Found allowance slot for 0x4482C88eFf8A6D87B8805e1EEA9b65647B7b0686: 1
+2026-03-11 16:25:06,280 | WARNING  | utils.dexscreener_client:get_token_data:40 - DexScreener fetch failed for 0xBcCA97fD53147285F2213b80634774221E8648BB: 
+2026-03-11 16:25:07,450 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 3 subscriptions. Processing as FIFO.
+2026-03-11 16:25:09,797 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 2 subscriptions. Processing as FIFO.
+2026-03-11 16:25:11,725 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 1 subscriptions. Processing as FIFO.
+2026-03-11 16:25:14,713 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 2 subscriptions. Processing as FIFO.
+2026-03-11 16:25:17,423 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 2 subscriptions. Processing as FIFO.
+2026-03-11 16:25:20,613 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 1 subscriptions. Processing as FIFO.
+2026-03-11 16:25:21,275 | WARNING  | utils.dexscreener_client:get_batch_prices:84 - DexScreener batch fetch failed: 
+2026-03-11 16:25:22,725 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:329 - Subscription response queue synced with websocket message stream.
+2026-03-11 16:25:27,990 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 1 subscriptions. Processing as FIFO.
+2026-03-11 16:25:33,945 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:329 - Subscription response queue synced with websocket message stream.
+2026-03-11 16:25:35,550 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 1 subscriptions. Processing as FIFO.
+2026-03-11 16:25:43,921 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:329 - Subscription response queue synced with websocket message stream.
+2026-03-11 16:25:45,687 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 1 subscriptions. Processing as FIFO.
+2026-03-11 16:25:55,577 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:329 - Subscription response queue synced with websocket message stream.
+2026-03-11 16:25:59,808 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 1 subscriptions. Processing as FIFO.
+2026-03-11 16:26:05,034 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:329 - Subscription response queue synced with websocket message stream.
+2026-03-11 16:26:05,273 | WARNING  | utils.dexscreener_client:get_batch_prices:84 - DexScreener batch fetch failed: 
+2026-03-11 16:26:07,980 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 1 subscriptions. Processing as FIFO.
+2026-03-11 16:26:14,036 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:329 - Subscription response queue synced with websocket message stream.
+2026-03-11 16:26:16,524 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 1 subscriptions. Processing as FIFO.
+2026-03-11 16:26:21,202 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:329 - Subscription response queue synced with websocket message stream.
+2026-03-11 16:26:24,431 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 1 subscriptions. Processing as FIFO.
+2026-03-11 16:26:29,419 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:329 - Subscription response queue synced with websocket message stream.
+2026-03-11 16:26:31,042 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 1 subscriptions. Processing as FIFO.
+2026-03-11 16:26:37,919 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:329 - Subscription response queue synced with websocket message stream.
+2026-03-11 16:26:40,007 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 1 subscriptions. Processing as FIFO.
+2026-03-11 16:26:49,292 | WARNING  | utils.dexscreener_client:get_batch_prices:84 - DexScreener batch fetch failed: 
+2026-03-11 16:26:49,527 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:329 - Subscription response queue synced with websocket message stream.
+2026-03-11 16:26:52,066 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 1 subscriptions. Processing as FIFO.
+2026-03-11 16:26:54,719 | INFO     | uvicorn.error:shutdown:272 - Shutting down
+2026-03-11 16:26:54,719 | INFO     | uvicorn.error:shutdown:272 - Shutting down
+2026-03-11 16:26:54,817 | INFO     | uvicorn.error:shutdown:67 - Waiting for application shutdown.
+2026-03-11 16:26:54,817 | INFO     | uvicorn.error:shutdown:67 - Waiting for application shutdown.
+2026-03-11 16:26:54,819 | INFO     | uvicorn.error:shutdown:76 - Application shutdown complete.
+2026-03-11 16:26:54,819 | INFO     | uvicorn.error:shutdown:76 - Application shutdown complete.
+2026-03-11 16:26:54,819 | INFO     | uvicorn.error:_serve:102 - Finished server process [24288]
+2026-03-11 16:26:54,819 | INFO     | uvicorn.error:_serve:102 - Finished server process [24288]
+2026-03-11 16:26:54,821 | INFO     | web3.providers.WebSocketProvider:disconnect:267 - Message listener background task successfully shut down.
+2026-03-11 16:26:54,822 | INFO     | web3.providers.WebSocketProvider:disconnect:267 - Message listener background task successfully shut down.
+2026-03-11 16:26:54,968 | INFO     | web3.providers.WebSocketProvider:disconnect:271 - Successfully disconnected from: wss://bsc-mainnet.nodereal.io/ws/v1/64a9df0874fb4a93b9d0a3849de012d3
+2026-03-11 16:26:54,977 | INFO     | web3.providers.WebSocketProvider:disconnect:271 - Successfully disconnected from: wss://bsc-mainnet.nodereal.io/ws/v1/64a9df0874fb4a93b9d0a3849de012d3
+2026-03-11 16:26:55,083 | ERROR    | asyncio:default_exception_handler:1821 - Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x00000220A0594320>
+2026-03-11 16:26:55,083 | ERROR    | asyncio:default_exception_handler:1821 - Unclosed connector
+connections: ['deque([(<aiohttp.client_proto.ResponseHandler object at 0x00000220A6248B30>, 70042.843)])', 'deque([(<aiohttp.client_proto.ResponseHandler object at 0x00000220A6249E50>, 70043.671)])', 'deque([(<aiohttp.client_proto.ResponseHandler object at 0x00000220A5FE4290>, 70043.734)])', 'deque([(<aiohttp.client_proto.ResponseHandler object at 0x00000220A6249DF0>, 70043.765)])']
+connector: <aiohttp.connector.TCPConnector object at 0x00000220A27076B0>
+2026-03-11 16:26:55,083 | ERROR    | asyncio:default_exception_handler:1821 - Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x00000220962319A0>
+2026-03-11 16:26:55,084 | ERROR    | asyncio:default_exception_handler:1821 - Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x00000220A2861D00>
+2026-03-11 16:26:55,084 | ERROR    | asyncio:default_exception_handler:1821 - Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x00000220A28AEAE0>
+2026-03-11 16:26:57,156 | INFO     | web.api:lifespan:64 - Initializing TradingBot... WITH_DEBUG_PRINTS_V2
+2026-03-11 16:27:02,308 | INFO     | web3.providers.WebSocketProvider:disconnect:267 - Message listener background task successfully shut down.
+2026-03-11 16:27:02,309 | INFO     | web3.providers.WebSocketProvider:disconnect:271 - Successfully disconnected from: wss://bsc-mainnet.nodereal.io/ws/v1/aeabb43a9a2d40deb0441e216d3962d6
+2026-03-11 16:27:08,742 | INFO     | uvicorn.error:startup:62 - Application startup complete.
+2026-03-11 16:27:08,742 | INFO     | uvicorn.error:startup:62 - Application startup complete.
+2026-03-11 16:27:08,743 | INFO     | web3.providers.WebSocketProvider:connect:232 - Connecting to: wss://bsc-mainnet.nodereal.io/ws/v1/64a9df0874fb4a93b9d0a3849de012d3
+2026-03-11 16:27:09,639 | INFO     | web3.providers.WebSocketProvider:connect:240 - Successfully connected to: wss://bsc-mainnet.nodereal.io/ws/v1/64a9df0874fb4a93b9d0a3849de012d3
+2026-03-11 16:27:09,641 | INFO     | web3.providers.WebSocketProvider:_message_listener:408 - WebSocketProvider listener background task started. Storing all messages in appropriate request processor queues / caches to be processed.
+2026-03-11 16:27:09,883 | INFO     | web3.providers.persistent.subscription_manager:subscribe:163 - Successfully subscribed to subscription:
+    label: LogsSubscription('logs', {'address': '0x5a6aac15947F2ebb9871A086818b613DDb160399', 'topics': ['0xd78ad95fa46c994b6551d0da85fc275fe613ce37657fb8d5e3d130840159d822']})
+    id: 0xe73c7791f3d3748823790582ffb59bc9
+2026-03-11 16:27:15,753 | INFO     | uvicorn.error:shutdown:272 - Shutting down
+2026-03-11 16:27:15,753 | INFO     | uvicorn.error:shutdown:272 - Shutting down
+2026-03-11 16:27:15,860 | INFO     | uvicorn.error:shutdown:67 - Waiting for application shutdown.
+2026-03-11 16:27:15,860 | INFO     | uvicorn.error:shutdown:67 - Waiting for application shutdown.
+2026-03-11 16:27:15,862 | INFO     | uvicorn.error:shutdown:76 - Application shutdown complete.
+2026-03-11 16:27:15,862 | INFO     | uvicorn.error:shutdown:76 - Application shutdown complete.
+2026-03-11 16:27:15,862 | INFO     | uvicorn.error:_serve:102 - Finished server process [32600]
+2026-03-11 16:27:15,862 | INFO     | uvicorn.error:_serve:102 - Finished server process [32600]
+2026-03-11 16:27:15,863 | INFO     | web3.providers.WebSocketProvider:disconnect:267 - Message listener background task successfully shut down.
+2026-03-11 16:27:16,011 | INFO     | web3.providers.WebSocketProvider:disconnect:271 - Successfully disconnected from: wss://bsc-mainnet.nodereal.io/ws/v1/64a9df0874fb4a93b9d0a3849de012d3
+2026-03-11 16:27:16,085 | ERROR    | asyncio:default_exception_handler:1821 - Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x0000020059D53470>
+2026-03-11 16:27:16,086 | ERROR    | asyncio:default_exception_handler:1821 - Unclosed connector
+connections: ['deque([(<aiohttp.client_proto.ResponseHandler object at 0x0000020066A42F90>, 70068.14)])', 'deque([(<aiohttp.client_proto.ResponseHandler object at 0x0000020066A42BD0>, 70068.25)])', 'deque([(<aiohttp.client_proto.ResponseHandler object at 0x0000020066A42E10>, 70068.343)])', 'deque([(<aiohttp.client_proto.ResponseHandler object at 0x0000020066A43050>, 70068.468)])']
+connector: <aiohttp.connector.TCPConnector object at 0x0000020066A69100>
+2026-03-11 16:27:16,086 | ERROR    | asyncio:default_exception_handler:1821 - Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x0000020066A25F10>
+2026-03-11 16:27:16,086 | ERROR    | asyncio:default_exception_handler:1821 - Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x0000020066A78710>
+2026-03-11 16:27:17,911 | INFO     | web.api:lifespan:64 - Initializing TradingBot... WITH_DEBUG_PRINTS_V2
+2026-03-11 16:27:23,302 | INFO     | web3.providers.WebSocketProvider:disconnect:267 - Message listener background task successfully shut down.
+2026-03-11 16:27:23,302 | INFO     | web3.providers.WebSocketProvider:disconnect:271 - Successfully disconnected from: wss://bsc-mainnet.nodereal.io/ws/v1/aeabb43a9a2d40deb0441e216d3962d6
+2026-03-11 16:27:27,894 | INFO     | uvicorn.error:startup:62 - Application startup complete.
+2026-03-11 16:27:27,894 | INFO     | uvicorn.error:startup:62 - Application startup complete.
+2026-03-11 16:27:27,895 | INFO     | web3.providers.WebSocketProvider:connect:232 - Connecting to: wss://bsc-mainnet.nodereal.io/ws/v1/64a9df0874fb4a93b9d0a3849de012d3
+2026-03-11 16:27:28,569 | INFO     | web3.providers.WebSocketProvider:connect:240 - Successfully connected to: wss://bsc-mainnet.nodereal.io/ws/v1/64a9df0874fb4a93b9d0a3849de012d3
+2026-03-11 16:27:28,570 | INFO     | web3.providers.WebSocketProvider:_message_listener:408 - WebSocketProvider listener background task started. Storing all messages in appropriate request processor queues / caches to be processed.
+2026-03-11 16:27:28,802 | INFO     | web3.providers.persistent.subscription_manager:subscribe:163 - Successfully subscribed to subscription:
+    label: LogsSubscription('logs', {'address': '0x5a6aac15947F2ebb9871A086818b613DDb160399', 'topics': ['0xd78ad95fa46c994b6551d0da85fc275fe613ce37657fb8d5e3d130840159d822']})
+    id: 0x9446e8a87052ebc12920a19ec9e695f9
+2026-03-11 16:27:29,229 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:329 - Subscription response queue synced with websocket message stream.
+2026-03-11 16:27:29,281 | INFO     | uvicorn.error:shutdown:272 - Shutting down
+2026-03-11 16:27:29,281 | INFO     | uvicorn.error:shutdown:272 - Shutting down
+2026-03-11 16:27:29,388 | INFO     | uvicorn.error:shutdown:67 - Waiting for application shutdown.
+2026-03-11 16:27:29,388 | INFO     | uvicorn.error:shutdown:67 - Waiting for application shutdown.
+2026-03-11 16:27:29,393 | INFO     | uvicorn.error:shutdown:76 - Application shutdown complete.
+2026-03-11 16:27:29,393 | INFO     | uvicorn.error:shutdown:76 - Application shutdown complete.
+2026-03-11 16:27:29,393 | INFO     | uvicorn.error:_serve:102 - Finished server process [29660]
+2026-03-11 16:27:29,393 | INFO     | uvicorn.error:_serve:102 - Finished server process [29660]
+2026-03-11 16:27:29,394 | INFO     | web3.providers.WebSocketProvider:disconnect:267 - Message listener background task successfully shut down.
+2026-03-11 16:27:29,537 | INFO     | web3.providers.WebSocketProvider:disconnect:271 - Successfully disconnected from: wss://bsc-mainnet.nodereal.io/ws/v1/64a9df0874fb4a93b9d0a3849de012d3
+2026-03-11 16:27:29,606 | ERROR    | asyncio:default_exception_handler:1821 - Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x000001BA40FB1E20>
+2026-03-11 16:27:29,607 | ERROR    | asyncio:default_exception_handler:1821 - Unclosed connector
+connections: ['deque([(<aiohttp.client_proto.ResponseHandler object at 0x000001BA4F2AB290>, 70087.875)])', 'deque([(<aiohttp.client_proto.ResponseHandler object at 0x000001BA4F2AAF90>, 70087.984)])', 'deque([(<aiohttp.client_proto.ResponseHandler object at 0x000001BA4F2AB110>, 70088.093)])', 'deque([(<aiohttp.client_proto.ResponseHandler object at 0x000001BA4F2AAD50>, 70088.093)])']
+connector: <aiohttp.connector.TCPConnector object at 0x000001BA4F2C8680>
+2026-03-11 16:27:29,609 | ERROR    | asyncio:default_exception_handler:1821 - Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x000001BA427594C0>
+2026-03-11 16:27:29,609 | ERROR    | asyncio:default_exception_handler:1821 - Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x000001BA4F2E8710>
+2026-03-11 16:27:31,143 | INFO     | web.api:lifespan:64 - Initializing TradingBot... WITH_DEBUG_PRINTS_V2
+2026-03-11 16:27:36,302 | INFO     | web3.providers.WebSocketProvider:disconnect:267 - Message listener background task successfully shut down.
+2026-03-11 16:27:36,302 | INFO     | web3.providers.WebSocketProvider:disconnect:271 - Successfully disconnected from: wss://bsc-mainnet.nodereal.io/ws/v1/aeabb43a9a2d40deb0441e216d3962d6
+2026-03-11 16:27:41,823 | INFO     | uvicorn.error:startup:62 - Application startup complete.
+2026-03-11 16:27:41,823 | INFO     | uvicorn.error:startup:62 - Application startup complete.
+2026-03-11 16:27:41,824 | INFO     | web3.providers.WebSocketProvider:connect:232 - Connecting to: wss://bsc-mainnet.nodereal.io/ws/v1/64a9df0874fb4a93b9d0a3849de012d3
+2026-03-11 16:27:42,467 | INFO     | web3.providers.WebSocketProvider:connect:240 - Successfully connected to: wss://bsc-mainnet.nodereal.io/ws/v1/64a9df0874fb4a93b9d0a3849de012d3
+2026-03-11 16:27:42,468 | INFO     | web3.providers.WebSocketProvider:_message_listener:408 - WebSocketProvider listener background task started. Storing all messages in appropriate request processor queues / caches to be processed.
+2026-03-11 16:27:42,684 | INFO     | web3.providers.persistent.subscription_manager:subscribe:163 - Successfully subscribed to subscription:
+    label: LogsSubscription('logs', {'address': '0x5a6aac15947F2ebb9871A086818b613DDb160399', 'topics': ['0xd78ad95fa46c994b6551d0da85fc275fe613ce37657fb8d5e3d130840159d822']})
+    id: 0x858166adcda6c4df1d65a0a0387be6bf
+2026-03-11 16:27:45,020 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:329 - Subscription response queue synced with websocket message stream.
+2026-03-11 16:27:52,270 | WARNING  | utils.dexscreener_client:get_batch_prices:84 - DexScreener batch fetch failed: 
+2026-03-11 16:28:00,134 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 3 subscriptions. Processing as FIFO.
+2026-03-11 16:28:02,139 | INFO     | web3.providers.WebSocketProvider:disconnect:267 - Message listener background task successfully shut down.
+2026-03-11 16:28:02,281 | INFO     | web3.providers.WebSocketProvider:disconnect:271 - Successfully disconnected from: wss://bsc-mainnet.nodereal.io/ws/v1/64a9df0874fb4a93b9d0a3849de012d3
+2026-03-11 16:30:16,435 | INFO     | bsc_bot.analyzer.local_simulator:find_balance_slot:135 - Found balance slot for 0x27dF688ac85fd6B4bE9B463666a5b00a4b384b87: 0
+2026-03-11 16:30:19,900 | INFO     | bsc_bot.analyzer.local_simulator:find_allowance_slot:193 - Found allowance slot for 0x27dF688ac85fd6B4bE9B463666a5b00a4b384b87: 1
+2026-03-11 16:30:28,734 | INFO     | bsc_bot.analyzer.local_simulator:find_allowance_slot:193 - Found allowance slot for 0x27dF688ac85fd6B4bE9B463666a5b00a4b384b87: 1
+2026-03-11 16:31:45,579 | INFO     | uvicorn.error:shutdown:272 - Shutting down
+2026-03-11 16:31:45,579 | INFO     | uvicorn.error:shutdown:272 - Shutting down
+2026-03-11 16:31:45,677 | INFO     | uvicorn.error:shutdown:67 - Waiting for application shutdown.
+2026-03-11 16:31:45,677 | INFO     | uvicorn.error:shutdown:67 - Waiting for application shutdown.
+2026-03-11 16:31:45,679 | INFO     | uvicorn.error:shutdown:76 - Application shutdown complete.
+2026-03-11 16:31:45,679 | INFO     | uvicorn.error:shutdown:76 - Application shutdown complete.
+2026-03-11 16:31:45,679 | INFO     | uvicorn.error:_serve:102 - Finished server process [17216]
+2026-03-11 16:31:45,679 | INFO     | uvicorn.error:_serve:102 - Finished server process [17216]
+2026-03-11 16:31:45,767 | ERROR    | asyncio:default_exception_handler:1821 - Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x000001F555E3A840>
+2026-03-11 16:31:45,768 | ERROR    | asyncio:default_exception_handler:1821 - Unclosed connector
+connections: ['deque([(<aiohttp.client_proto.ResponseHandler object at 0x000001F56446C6B0>, 70339.859)])', 'deque([(<aiohttp.client_proto.ResponseHandler object at 0x000001F56446E150>, 70340.015)])', 'deque([(<aiohttp.client_proto.ResponseHandler object at 0x000001F56446EAB0>, 70340.25)])', 'deque([(<aiohttp.client_proto.ResponseHandler object at 0x000001F56446E1B0>, 70341.546)])']
+connector: <aiohttp.connector.TCPConnector object at 0x000001F5642677A0>
+2026-03-11 16:31:45,770 | ERROR    | asyncio:default_exception_handler:1821 - Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x000001F564234110>
+2026-03-11 16:31:45,770 | ERROR    | asyncio:default_exception_handler:1821 - Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x000001F5642908C0>
+2026-03-11 16:31:45,771 | ERROR    | asyncio:default_exception_handler:1821 - Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x000001F56443F7D0>
+2026-03-11 16:31:47,544 | INFO     | web.api:lifespan:64 - Initializing TradingBot... WITH_DEBUG_PRINTS_V2
+2026-03-11 16:31:53,304 | INFO     | web3.providers.WebSocketProvider:disconnect:267 - Message listener background task successfully shut down.
+2026-03-11 16:31:53,305 | INFO     | web3.providers.WebSocketProvider:disconnect:271 - Successfully disconnected from: wss://bsc-mainnet.nodereal.io/ws/v1/aeabb43a9a2d40deb0441e216d3962d6
+2026-03-11 16:31:59,024 | INFO     | uvicorn.error:startup:62 - Application startup complete.
+2026-03-11 16:31:59,024 | INFO     | uvicorn.error:startup:62 - Application startup complete.
+2026-03-11 16:35:35,906 | INFO     | web.api:lifespan:64 - Initializing TradingBot... WITH_DEBUG_PRINTS_V2
+2026-03-11 16:35:41,305 | INFO     | web3.providers.WebSocketProvider:disconnect:267 - Message listener background task successfully shut down.
+2026-03-11 16:35:41,306 | INFO     | web3.providers.WebSocketProvider:disconnect:271 - Successfully disconnected from: wss://bsc-mainnet.nodereal.io/ws/v1/aeabb43a9a2d40deb0441e216d3962d6
+2026-03-11 16:35:45,299 | INFO     | uvicorn.error:startup:62 - Application startup complete.
+2026-03-11 16:35:45,299 | INFO     | uvicorn.error:startup:62 - Application startup complete.
+2026-03-11 16:35:45,334 | INFO     | uvicorn.access:send:480 - 127.0.0.1:62143 - "OPTIONS /api/status HTTP/1.1" 200
+2026-03-11 16:35:45,343 | INFO     | uvicorn.access:send:480 - 127.0.0.1:62144 - "OPTIONS /api/stats/daily?days=7 HTTP/1.1" 200
+2026-03-11 16:35:45,349 | INFO     | uvicorn.access:send:480 - 127.0.0.1:62146 - "OPTIONS /api/status HTTP/1.1" 200
+2026-03-11 16:35:45,351 | INFO     | uvicorn.access:send:480 - 127.0.0.1:62145 - "OPTIONS /api/simulation/stats?days=7 HTTP/1.1" 200
+2026-03-11 16:35:45,352 | INFO     | uvicorn.access:send:480 - 127.0.0.1:62148 - "OPTIONS /api/simulation/stats?days=7 HTTP/1.1" 200
+2026-03-11 16:35:45,352 | INFO     | uvicorn.access:send:480 - 127.0.0.1:62147 - "OPTIONS /api/stats/daily?days=7 HTTP/1.1" 200
+2026-03-11 16:35:45,409 | INFO     | uvicorn.access:send:480 - 127.0.0.1:62146 - "GET /api/stats/daily?days=7 HTTP/1.1" 200
+2026-03-11 16:35:45,493 | INFO     | uvicorn.access:send:480 - 127.0.0.1:62148 - "GET /api/simulation/stats?days=7 HTTP/1.1" 200
+2026-03-11 16:35:45,543 | INFO     | uvicorn.access:send:480 - 127.0.0.1:62143 - "GET /api/status HTTP/1.1" 200
+2026-03-11 16:35:45,556 | INFO     | uvicorn.access:send:480 - 127.0.0.1:62147 - "GET /api/stats/daily?days=7 HTTP/1.1" 200
+2026-03-11 16:35:45,719 | INFO     | uvicorn.access:send:480 - 127.0.0.1:62146 - "GET /api/simulation/stats?days=7 HTTP/1.1" 200
+2026-03-11 16:35:45,802 | INFO     | uvicorn.access:send:480 - 127.0.0.1:62148 - "GET /api/status HTTP/1.1" 200
+2026-03-11 16:35:49,997 | INFO     | uvicorn.access:send:480 - 127.0.0.1:62148 - "GET /api/status HTTP/1.1" 200
+2026-03-11 16:35:53,015 | INFO     | uvicorn.access:send:480 - 127.0.0.1:62148 - "OPTIONS /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 16:35:53,018 | INFO     | uvicorn.access:send:480 - 127.0.0.1:62148 - "OPTIONS /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 16:35:53,100 | INFO     | uvicorn.access:send:480 - 127.0.0.1:62148 - "GET /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 16:35:53,148 | INFO     | uvicorn.access:send:480 - 127.0.0.1:62148 - "GET /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 16:35:53,549 | INFO     | uvicorn.access:send:480 - 127.0.0.1:62148 - "GET /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 16:35:54,885 | INFO     | uvicorn.access:send:480 - 127.0.0.1:62148 - "OPTIONS /api/positions HTTP/1.1" 200
+2026-03-11 16:35:54,886 | INFO     | uvicorn.access:send:480 - 127.0.0.1:62218 - "OPTIONS /api/positions HTTP/1.1" 200
+2026-03-11 16:35:54,889 | INFO     | uvicorn.access:send:480 - 127.0.0.1:62148 - "GET /api/positions HTTP/1.1" 200
+2026-03-11 16:35:54,893 | INFO     | uvicorn.access:send:480 - 127.0.0.1:62218 - "GET /api/positions HTTP/1.1" 200
+2026-03-11 16:35:55,193 | INFO     | uvicorn.error:asgi_send:270 - 127.0.0.1:62228 - "WebSocket /ws/prices?api_key=tugou_secret_key" [accepted]
+2026-03-11 16:35:55,193 | INFO     | uvicorn.error:asgi_send:270 - 127.0.0.1:62228 - "WebSocket /ws/prices?api_key=tugou_secret_key" [accepted]
+2026-03-11 16:35:55,195 | INFO     | uvicorn.error:handshake:643 - connection open
+2026-03-11 16:35:55,195 | INFO     | uvicorn.error:handshake:643 - connection open
+2026-03-11 16:35:55,917 | INFO     | uvicorn.error:handler:264 - connection closed
+2026-03-11 16:35:55,917 | INFO     | uvicorn.error:handler:264 - connection closed
+2026-03-11 16:35:55,928 | INFO     | uvicorn.access:send:480 - 127.0.0.1:62148 - "OPTIONS /api/trades?page=1&limit=500 HTTP/1.1" 200
+2026-03-11 16:35:55,931 | INFO     | uvicorn.access:send:480 - 127.0.0.1:62218 - "OPTIONS /api/trades?page=1&limit=500 HTTP/1.1" 200
+2026-03-11 16:35:55,963 | INFO     | uvicorn.access:send:480 - 127.0.0.1:62148 - "GET /api/trades?page=1&limit=500 HTTP/1.1" 200
+2026-03-11 16:35:55,989 | INFO     | uvicorn.access:send:480 - 127.0.0.1:62219 - "GET /api/status HTTP/1.1" 200
+2026-03-11 16:35:56,016 | INFO     | uvicorn.access:send:480 - 127.0.0.1:62218 - "GET /api/trades?page=1&limit=500 HTTP/1.1" 200
+2026-03-11 16:35:56,028 | INFO     | uvicorn.access:send:480 - 127.0.0.1:62148 - "GET /api/status HTTP/1.1" 200
+2026-03-11 16:35:58,718 | INFO     | uvicorn.access:send:480 - 127.0.0.1:62148 - "GET /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 16:35:58,759 | INFO     | uvicorn.access:send:480 - 127.0.0.1:62218 - "GET /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 16:35:59,213 | INFO     | uvicorn.access:send:480 - 127.0.0.1:62218 - "GET /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 16:36:09,194 | INFO     | uvicorn.access:send:480 - 127.0.0.1:62221 - "GET /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 16:36:19,469 | INFO     | uvicorn.access:send:480 - 127.0.0.1:62404 - "GET /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 16:36:29,158 | INFO     | uvicorn.access:send:480 - 127.0.0.1:62406 - "GET /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 16:36:39,456 | INFO     | uvicorn.access:send:480 - 127.0.0.1:62534 - "GET /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 16:36:49,157 | INFO     | uvicorn.access:send:480 - 127.0.0.1:62543 - "GET /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 16:36:59,465 | INFO     | uvicorn.access:send:480 - 127.0.0.1:62693 - "GET /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 16:37:19,156 | INFO     | uvicorn.access:send:480 - 127.0.0.1:62703 - "GET /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 16:37:30,297 | INFO     | bsc_bot.analyzer.local_simulator:find_balance_slot:135 - Found balance slot for 0xF37415863212411FfDd5AB8579fE62725dC861Ae: 0
+2026-03-11 16:37:31,099 | INFO     | bsc_bot.analyzer.local_simulator:find_allowance_slot:193 - Found allowance slot for 0xF37415863212411FfDd5AB8579fE62725dC861Ae: 1
+2026-03-11 16:37:32,738 | INFO     | bsc_bot.analyzer.local_simulator:find_balance_slot:135 - Found balance slot for 0xF37415863212411FfDd5AB8579fE62725dC861Ae: 0
+2026-03-11 16:37:36,519 | INFO     | bsc_bot.analyzer.local_simulator:find_allowance_slot:193 - Found allowance slot for 0xF37415863212411FfDd5AB8579fE62725dC861Ae: 1
+2026-03-11 16:38:19,484 | INFO     | uvicorn.access:send:480 - 127.0.0.1:63540 - "GET /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 16:38:52,939 | INFO     | uvicorn.access:send:480 - 127.0.0.1:63541 - "GET /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 16:38:59,532 | INFO     | uvicorn.access:send:480 - 127.0.0.1:63895 - "GET /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 16:39:07,035 | INFO     | bsc_bot.analyzer.local_simulator:find_allowance_slot:193 - Found allowance slot for 0xdA25182761D21da5507B45a71799E68B65Bf341F: 1
+2026-03-11 16:39:09,168 | INFO     | uvicorn.access:send:480 - 127.0.0.1:63896 - "GET /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 16:39:11,498 | INFO     | bsc_bot.analyzer.local_simulator:find_balance_slot:135 - Found balance slot for 0xdA25182761D21da5507B45a71799E68B65Bf341F: 0
+2026-03-11 16:39:15,686 | INFO     | bsc_bot.analyzer.local_simulator:find_allowance_slot:193 - Found allowance slot for 0xdA25182761D21da5507B45a71799E68B65Bf341F: 1
+2026-03-11 16:39:18,791 | INFO     | web3.providers.WebSocketProvider:connect:232 - Connecting to: wss://bsc-mainnet.nodereal.io/ws/v1/64a9df0874fb4a93b9d0a3849de012d3
+2026-03-11 16:39:19,483 | INFO     | uvicorn.access:send:480 - 127.0.0.1:64269 - "GET /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 16:39:19,661 | INFO     | web3.providers.WebSocketProvider:connect:240 - Successfully connected to: wss://bsc-mainnet.nodereal.io/ws/v1/64a9df0874fb4a93b9d0a3849de012d3
+2026-03-11 16:39:19,663 | INFO     | web3.providers.WebSocketProvider:_message_listener:408 - WebSocketProvider listener background task started. Storing all messages in appropriate request processor queues / caches to be processed.
+2026-03-11 16:39:19,837 | WARNING  | utils.dexscreener_client:get_token_data:40 - DexScreener fetch failed for 0xdA25182761D21da5507B45a71799E68B65Bf341F: Cannot connect to host api.dexscreener.com:443 ssl:default [远程主机强迫关闭了一个现有的连接。]
+2026-03-11 16:39:19,867 | INFO     | web3.providers.persistent.subscription_manager:subscribe:163 - Successfully subscribed to subscription:
+    label: LogsSubscription('logs', {'address': '0x551cdEa24Ae49c592ADA24b31421e6E0b7587f5a', 'topics': ['0xd78ad95fa46c994b6551d0da85fc275fe613ce37657fb8d5e3d130840159d822']})
+    id: 0x8306ec04d49929ed1f58d56d9e25e5c6
+2026-03-11 16:39:29,167 | INFO     | uvicorn.access:send:480 - 127.0.0.1:64271 - "GET /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 16:39:39,498 | INFO     | uvicorn.access:send:480 - 127.0.0.1:64415 - "GET /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 16:39:44,936 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:329 - Subscription response queue synced with websocket message stream.
+2026-03-11 16:39:49,161 | INFO     | uvicorn.access:send:480 - 127.0.0.1:64416 - "GET /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 16:39:50,615 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 6 subscriptions. Processing as FIFO.
+2026-03-11 16:39:53,124 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 7 subscriptions. Processing as FIFO.
+2026-03-11 16:39:54,763 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 6 subscriptions. Processing as FIFO.
+2026-03-11 16:39:56,276 | WARNING  | utils.dexscreener_client:get_batch_prices:84 - DexScreener batch fetch failed: 
+2026-03-11 16:39:57,542 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 8 subscriptions. Processing as FIFO.
+2026-03-11 16:39:59,338 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 7 subscriptions. Processing as FIFO.
+2026-03-11 16:40:00,903 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 9 subscriptions. Processing as FIFO.
+2026-03-11 16:40:02,930 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 8 subscriptions. Processing as FIFO.
+2026-03-11 16:40:04,933 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 7 subscriptions. Processing as FIFO.
+2026-03-11 16:40:07,370 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 8 subscriptions. Processing as FIFO.
+2026-03-11 16:40:09,202 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 7 subscriptions. Processing as FIFO.
+2026-03-11 16:40:10,903 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 7 subscriptions. Processing as FIFO.
+2026-03-11 16:40:11,477 | INFO     | bsc_bot.analyzer.local_simulator:find_allowance_slot:193 - Found allowance slot for 0x3BFF9B48cDD6b741401E4d104EF3246FAf0c0951: 1
+2026-03-11 16:40:12,819 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 7 subscriptions. Processing as FIFO.
+2026-03-11 16:40:13,884 | INFO     | bsc_bot.analyzer.local_simulator:find_balance_slot:135 - Found balance slot for 0x3BFF9B48cDD6b741401E4d104EF3246FAf0c0951: 0
+2026-03-11 16:40:14,638 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 8 subscriptions. Processing as FIFO.
+2026-03-11 16:40:17,792 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 10 subscriptions. Processing as FIFO.
+2026-03-11 16:40:19,305 | INFO     | bsc_bot.analyzer.local_simulator:find_allowance_slot:193 - Found allowance slot for 0x3BFF9B48cDD6b741401E4d104EF3246FAf0c0951: 1
+2026-03-11 16:40:19,477 | INFO     | uvicorn.access:send:480 - 127.0.0.1:65046 - "GET /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 16:40:20,251 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 10 subscriptions. Processing as FIFO.
+2026-03-11 16:40:22,321 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 11 subscriptions. Processing as FIFO.
+2026-03-11 16:40:22,700 | INFO     | bsc_bot.analyzer.local_simulator:find_balance_slot:135 - Found balance slot for 0x7f6920913ef64Ce1d19fd4e115bb8D73B8B930a7: 0
+2026-03-11 16:40:23,837 | INFO     | web3.providers.WebSocketProvider:connect:232 - Connecting to: wss://bsc-mainnet.nodereal.io/ws/v1/64a9df0874fb4a93b9d0a3849de012d3
+2026-03-11 16:40:24,068 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 11 subscriptions. Processing as FIFO.
+2026-03-11 16:40:24,514 | INFO     | web3.providers.WebSocketProvider:connect:240 - Successfully connected to: wss://bsc-mainnet.nodereal.io/ws/v1/64a9df0874fb4a93b9d0a3849de012d3
+2026-03-11 16:40:24,516 | INFO     | web3.providers.WebSocketProvider:_message_listener:408 - WebSocketProvider listener background task started. Storing all messages in appropriate request processor queues / caches to be processed.
+2026-03-11 16:40:24,755 | INFO     | web3.providers.persistent.subscription_manager:subscribe:163 - Successfully subscribed to subscription:
+    label: LogsSubscription('logs', {'address': '0xc7d46A86cBB6705677D48E0398FEB4E9976e4605', 'topics': ['0xd78ad95fa46c994b6551d0da85fc275fe613ce37657fb8d5e3d130840159d822']})
+    id: 0xa2f308b54379661644dd04f53519fab5
+2026-03-11 16:40:24,791 | INFO     | bsc_bot.analyzer.local_simulator:find_allowance_slot:193 - Found allowance slot for 0x7f6920913ef64Ce1d19fd4e115bb8D73B8B930a7: 1
+2026-03-11 16:40:25,758 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 11 subscriptions. Processing as FIFO.
+2026-03-11 16:40:27,779 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 12 subscriptions. Processing as FIFO.
+2026-03-11 16:40:29,545 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 13 subscriptions. Processing as FIFO.
+2026-03-11 16:40:31,119 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 14 subscriptions. Processing as FIFO.
+2026-03-11 16:40:32,618 | INFO     | bsc_bot.analyzer.local_simulator:find_allowance_slot:193 - Found allowance slot for 0x7f6920913ef64Ce1d19fd4e115bb8D73B8B930a7: 1
+2026-03-11 16:40:32,749 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 13 subscriptions. Processing as FIFO.
+2026-03-11 16:40:34,040 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:329 - Subscription response queue synced with websocket message stream.
+2026-03-11 16:40:34,264 | WARNING  | utils.dexscreener_client:get_token_data:40 - DexScreener fetch failed for 0x3BFF9B48cDD6b741401E4d104EF3246FAf0c0951: 
+2026-03-11 16:40:34,750 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 14 subscriptions. Processing as FIFO.
+2026-03-11 16:40:36,884 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 14 subscriptions. Processing as FIFO.
+2026-03-11 16:40:38,445 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 14 subscriptions. Processing as FIFO.
+2026-03-11 16:40:40,111 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 14 subscriptions. Processing as FIFO.
+2026-03-11 16:40:40,995 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 1 subscriptions. Processing as FIFO.
+2026-03-11 16:40:41,266 | WARNING  | utils.dexscreener_client:get_batch_prices:84 - DexScreener batch fetch failed: 
+2026-03-11 16:40:41,707 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 13 subscriptions. Processing as FIFO.
+2026-03-11 16:40:42,908 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 2 subscriptions. Processing as FIFO.
+2026-03-11 16:40:43,492 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 12 subscriptions. Processing as FIFO.
+2026-03-11 16:40:45,089 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 11 subscriptions. Processing as FIFO.
+2026-03-11 16:40:45,485 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 1 subscriptions. Processing as FIFO.
+2026-03-11 16:40:46,712 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 12 subscriptions. Processing as FIFO.
+2026-03-11 16:40:49,021 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 11 subscriptions. Processing as FIFO.
+2026-03-11 16:40:52,012 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:329 - Subscription response queue synced with websocket message stream.
+2026-03-11 16:40:52,258 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 13 subscriptions. Processing as FIFO.
+2026-03-11 16:40:54,258 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 13 subscriptions. Processing as FIFO.
+2026-03-11 16:40:54,493 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 1 subscriptions. Processing as FIFO.
+2026-03-11 16:40:56,141 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 13 subscriptions. Processing as FIFO.
+2026-03-11 16:40:57,787 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 12 subscriptions. Processing as FIFO.
+2026-03-11 16:40:59,310 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 14 subscriptions. Processing as FIFO.
+2026-03-11 16:41:01,708 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 14 subscriptions. Processing as FIFO.
+2026-03-11 16:41:02,827 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:329 - Subscription response queue synced with websocket message stream.
+2026-03-11 16:41:04,399 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 1 subscriptions. Processing as FIFO.
+2026-03-11 16:41:04,636 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 14 subscriptions. Processing as FIFO.
+2026-03-11 16:41:07,095 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 13 subscriptions. Processing as FIFO.
+2026-03-11 16:41:09,772 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 12 subscriptions. Processing as FIFO.
+2026-03-11 16:41:09,985 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:329 - Subscription response queue synced with websocket message stream.
+2026-03-11 16:41:12,217 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 12 subscriptions. Processing as FIFO.
+2026-03-11 16:41:13,877 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 15 subscriptions. Processing as FIFO.
+2026-03-11 16:41:13,938 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 1 subscriptions. Processing as FIFO.
+2026-03-11 16:41:15,462 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 15 subscriptions. Processing as FIFO.
+2026-03-11 16:41:17,765 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 15 subscriptions. Processing as FIFO.
+2026-03-11 16:41:19,162 | INFO     | uvicorn.access:send:480 - 127.0.0.1:65054 - "GET /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 16:41:20,858 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:329 - Subscription response queue synced with websocket message stream.
+2026-03-11 16:41:22,413 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 1 subscriptions. Processing as FIFO.
+2026-03-11 16:41:25,263 | WARNING  | utils.dexscreener_client:get_batch_prices:84 - DexScreener batch fetch failed: 
+2026-03-11 16:41:28,013 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 20 subscriptions. Processing as FIFO.
+2026-03-11 16:41:28,984 | INFO     | bsc_bot.analyzer.local_simulator:find_allowance_slot:193 - Found allowance slot for 0xD407B87e6E9bbB7d8e19f8981d32d8Bf6041BeeB: 3
+2026-03-11 16:41:30,236 | INFO     | web3.providers.WebSocketProvider:disconnect:267 - Message listener background task successfully shut down.
+2026-03-11 16:41:30,373 | INFO     | web3.providers.WebSocketProvider:disconnect:271 - Successfully disconnected from: wss://bsc-mainnet.nodereal.io/ws/v1/64a9df0874fb4a93b9d0a3849de012d3
+2026-03-11 16:41:31,189 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:329 - Subscription response queue synced with websocket message stream.
+2026-03-11 16:41:33,519 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 1 subscriptions. Processing as FIFO.
+2026-03-11 16:41:33,557 | INFO     | bsc_bot.analyzer.local_simulator:find_balance_slot:135 - Found balance slot for 0xD407B87e6E9bbB7d8e19f8981d32d8Bf6041BeeB: 2
+2026-03-11 16:41:36,755 | INFO     | bsc_bot.analyzer.local_simulator:find_allowance_slot:193 - Found allowance slot for 0xD407B87e6E9bbB7d8e19f8981d32d8Bf6041BeeB: 3
+2026-03-11 16:41:36,973 | INFO     | bsc_bot.analyzer.local_simulator:find_balance_slot:135 - Found balance slot for 0xD407B87e6E9bbB7d8e19f8981d32d8Bf6041BeeB: 2
+2026-03-11 16:41:38,784 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:329 - Subscription response queue synced with websocket message stream.
+2026-03-11 16:41:50,927 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 1 subscriptions. Processing as FIFO.
+2026-03-11 16:41:53,590 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:329 - Subscription response queue synced with websocket message stream.
+2026-03-11 16:41:55,350 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 1 subscriptions. Processing as FIFO.
+2026-03-11 16:41:59,940 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:329 - Subscription response queue synced with websocket message stream.
+2026-03-11 16:42:03,612 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 2 subscriptions. Processing as FIFO.
+2026-03-11 16:42:05,196 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 1 subscriptions. Processing as FIFO.
+2026-03-11 16:42:08,504 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:329 - Subscription response queue synced with websocket message stream.
+2026-03-11 16:42:09,269 | WARNING  | utils.dexscreener_client:get_batch_prices:84 - DexScreener batch fetch failed: 
+2026-03-11 16:42:10,145 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 1 subscriptions. Processing as FIFO.
+2026-03-11 16:42:18,431 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:329 - Subscription response queue synced with websocket message stream.
+2026-03-11 16:42:19,479 | INFO     | uvicorn.access:send:480 - 127.0.0.1:50239 - "GET /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 16:42:20,109 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 1 subscriptions. Processing as FIFO.
+2026-03-11 16:42:26,045 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:329 - Subscription response queue synced with websocket message stream.
+2026-03-11 16:42:35,398 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 1 subscriptions. Processing as FIFO.
+2026-03-11 16:42:37,045 | INFO     | web3.providers.WebSocketProvider:disconnect:267 - Message listener background task successfully shut down.
+2026-03-11 16:42:37,196 | INFO     | web3.providers.WebSocketProvider:disconnect:271 - Successfully disconnected from: wss://bsc-mainnet.nodereal.io/ws/v1/64a9df0874fb4a93b9d0a3849de012d3
+2026-03-11 16:43:19,195 | INFO     | uvicorn.access:send:480 - 127.0.0.1:50242 - "GET /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 16:44:19,470 | INFO     | uvicorn.access:send:480 - 127.0.0.1:51234 - "GET /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 16:45:19,162 | INFO     | uvicorn.access:send:480 - 127.0.0.1:51240 - "GET /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 16:46:20,780 | INFO     | uvicorn.access:send:480 - 127.0.0.1:52228 - "OPTIONS /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 16:46:20,846 | INFO     | uvicorn.access:send:480 - 127.0.0.1:52228 - "GET /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 16:47:19,211 | INFO     | uvicorn.access:send:480 - 127.0.0.1:52237 - "GET /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 16:47:26,963 | INFO     | bsc_bot.analyzer.local_simulator:find_allowance_slot:193 - Found allowance slot for 0x97073e54C1C5D517558F9A5f6a3461f8454695e9: 1
+2026-03-11 16:47:27,404 | INFO     | bsc_bot.analyzer.local_simulator:find_balance_slot:135 - Found balance slot for 0x97073e54C1C5D517558F9A5f6a3461f8454695e9: 0
+2026-03-11 16:47:31,931 | INFO     | bsc_bot.analyzer.local_simulator:find_balance_slot:135 - Found balance slot for 0x97073e54C1C5D517558F9A5f6a3461f8454695e9: 0
+2026-03-11 16:47:35,779 | INFO     | bsc_bot.analyzer.local_simulator:find_allowance_slot:193 - Found allowance slot for 0x97073e54C1C5D517558F9A5f6a3461f8454695e9: 1
+2026-03-11 16:47:57,966 | INFO     | bsc_bot.analyzer.local_simulator:find_balance_slot:135 - Found balance slot for 0x2e039E68082B82CF3Ce45619CA242949c218ddc0: 0
+2026-03-11 16:47:58,424 | INFO     | bsc_bot.analyzer.local_simulator:find_balance_slot:135 - Found balance slot for 0x2e039E68082B82CF3Ce45619CA242949c218ddc0: 0
+2026-03-11 16:48:03,950 | INFO     | bsc_bot.analyzer.local_simulator:find_allowance_slot:193 - Found allowance slot for 0x2e039E68082B82CF3Ce45619CA242949c218ddc0: 1
+2026-03-11 16:48:03,955 | INFO     | bsc_bot.analyzer.local_simulator:find_allowance_slot:193 - Found allowance slot for 0x2e039E68082B82CF3Ce45619CA242949c218ddc0: 1
+2026-03-11 16:48:19,472 | INFO     | uvicorn.access:send:480 - 127.0.0.1:53816 - "GET /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 16:49:19,169 | INFO     | uvicorn.access:send:480 - 127.0.0.1:53817 - "GET /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 16:50:16,529 | INFO     | bsc_bot.analyzer.local_simulator:find_balance_slot:135 - Found balance slot for 0xc347B2A48547c86f72b28E2f142Fe12CBcb6beCd: 0
+2026-03-11 16:50:19,471 | INFO     | uvicorn.access:send:480 - 127.0.0.1:54810 - "GET /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 16:50:19,970 | INFO     | bsc_bot.analyzer.local_simulator:find_allowance_slot:193 - Found allowance slot for 0xc347B2A48547c86f72b28E2f142Fe12CBcb6beCd: 1
+2026-03-11 16:50:20,309 | INFO     | bsc_bot.analyzer.local_simulator:find_balance_slot:135 - Found balance slot for 0xc347B2A48547c86f72b28E2f142Fe12CBcb6beCd: 0
+2026-03-11 16:50:24,493 | INFO     | bsc_bot.analyzer.local_simulator:find_allowance_slot:193 - Found allowance slot for 0xc347B2A48547c86f72b28E2f142Fe12CBcb6beCd: 1
+2026-03-11 16:51:19,209 | INFO     | uvicorn.access:send:480 - 127.0.0.1:54813 - "GET /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 16:52:05,693 | INFO     | bsc_bot.analyzer.local_simulator:find_allowance_slot:193 - Found allowance slot for 0x04bBDbF4be20853579DB46f290138b519d6311F1: 1
+2026-03-11 16:52:09,806 | INFO     | bsc_bot.analyzer.local_simulator:find_balance_slot:135 - Found balance slot for 0x04bBDbF4be20853579DB46f290138b519d6311F1: 0
+2026-03-11 16:52:13,388 | INFO     | bsc_bot.analyzer.local_simulator:find_allowance_slot:193 - Found allowance slot for 0x04bBDbF4be20853579DB46f290138b519d6311F1: 1
+2026-03-11 16:52:16,978 | INFO     | web3.providers.WebSocketProvider:connect:232 - Connecting to: wss://bsc-mainnet.nodereal.io/ws/v1/64a9df0874fb4a93b9d0a3849de012d3
+2026-03-11 16:52:17,199 | WARNING  | utils.dexscreener_client:get_token_data:40 - DexScreener fetch failed for 0x04bBDbF4be20853579DB46f290138b519d6311F1: Cannot connect to host api.dexscreener.com:443 ssl:default [远程主机强迫关闭了一个现有的连接。]
+2026-03-11 16:52:17,586 | INFO     | web3.providers.WebSocketProvider:connect:240 - Successfully connected to: wss://bsc-mainnet.nodereal.io/ws/v1/64a9df0874fb4a93b9d0a3849de012d3
+2026-03-11 16:52:17,588 | INFO     | web3.providers.WebSocketProvider:_message_listener:408 - WebSocketProvider listener background task started. Storing all messages in appropriate request processor queues / caches to be processed.
+2026-03-11 16:52:17,789 | INFO     | web3.providers.persistent.subscription_manager:subscribe:163 - Successfully subscribed to subscription:
+    label: LogsSubscription('logs', {'address': '0x1F48BEd0F6178Eb3943580594386460f6f01FCE4', 'topics': ['0xd78ad95fa46c994b6551d0da85fc275fe613ce37657fb8d5e3d130840159d822']})
+    id: 0xf067f8b34605f3a0fded7fd8dfff4129
+2026-03-11 16:52:19,478 | INFO     | uvicorn.access:send:480 - 127.0.0.1:56036 - "GET /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 16:52:21,907 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:329 - Subscription response queue synced with websocket message stream.
+2026-03-11 16:52:27,473 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 6 subscriptions. Processing as FIFO.
+2026-03-11 16:52:30,426 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 8 subscriptions. Processing as FIFO.
+2026-03-11 16:52:31,973 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 8 subscriptions. Processing as FIFO.
+2026-03-11 16:52:34,303 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 7 subscriptions. Processing as FIFO.
+2026-03-11 16:52:37,482 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 7 subscriptions. Processing as FIFO.
+2026-03-11 16:52:40,109 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 9 subscriptions. Processing as FIFO.
+2026-03-11 16:52:42,241 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 10 subscriptions. Processing as FIFO.
+2026-03-11 16:52:42,518 | WARNING  | utils.dexscreener_client:get_batch_prices:84 - DexScreener batch fetch failed: Cannot connect to host api.dexscreener.com:443 ssl:default [远程主机强迫关闭了一个现有的连接。]
+2026-03-11 16:52:44,753 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 9 subscriptions. Processing as FIFO.
+2026-03-11 16:52:48,285 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 12 subscriptions. Processing as FIFO.
+2026-03-11 16:52:50,580 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 11 subscriptions. Processing as FIFO.
+2026-03-11 16:52:56,771 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 14 subscriptions. Processing as FIFO.
+2026-03-11 16:52:59,086 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 15 subscriptions. Processing as FIFO.
+2026-03-11 16:53:00,846 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 14 subscriptions. Processing as FIFO.
+2026-03-11 16:53:04,633 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 16 subscriptions. Processing as FIFO.
+2026-03-11 16:53:06,516 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 16 subscriptions. Processing as FIFO.
+2026-03-11 16:53:08,893 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 16 subscriptions. Processing as FIFO.
+2026-03-11 16:53:10,710 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 17 subscriptions. Processing as FIFO.
+2026-03-11 16:53:12,763 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 19 subscriptions. Processing as FIFO.
+2026-03-11 16:53:15,645 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 19 subscriptions. Processing as FIFO.
+2026-03-11 16:53:15,712 | WARNING  | utils.dexscreener_client:get_batch_prices:84 - DexScreener batch fetch failed: Cannot connect to host api.dexscreener.com:443 ssl:default [远程主机强迫关闭了一个现有的连接。]
+2026-03-11 16:53:19,162 | INFO     | uvicorn.access:send:480 - 127.0.0.1:56041 - "GET /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 16:53:19,816 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 19 subscriptions. Processing as FIFO.
+2026-03-11 16:53:25,180 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 21 subscriptions. Processing as FIFO.
+2026-03-11 16:53:26,813 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 21 subscriptions. Processing as FIFO.
+2026-03-11 16:53:30,616 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 22 subscriptions. Processing as FIFO.
+2026-03-11 16:53:33,396 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 24 subscriptions. Processing as FIFO.
+2026-03-11 16:53:35,014 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 23 subscriptions. Processing as FIFO.
+2026-03-11 16:53:36,761 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 22 subscriptions. Processing as FIFO.
+2026-03-11 16:53:38,504 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 23 subscriptions. Processing as FIFO.
+2026-03-11 16:53:40,056 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 24 subscriptions. Processing as FIFO.
+2026-03-11 16:53:41,676 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 23 subscriptions. Processing as FIFO.
+2026-03-11 16:53:43,421 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 23 subscriptions. Processing as FIFO.
+2026-03-11 16:53:45,199 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 23 subscriptions. Processing as FIFO.
+2026-03-11 16:53:46,768 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 23 subscriptions. Processing as FIFO.
+2026-03-11 16:53:48,598 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 24 subscriptions. Processing as FIFO.
+2026-03-11 16:53:48,920 | WARNING  | utils.dexscreener_client:get_batch_prices:84 - DexScreener batch fetch failed: Cannot connect to host api.dexscreener.com:443 ssl:default [远程主机强迫关闭了一个现有的连接。]
+2026-03-11 16:53:51,047 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 23 subscriptions. Processing as FIFO.
+2026-03-11 16:53:52,924 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 24 subscriptions. Processing as FIFO.
+2026-03-11 16:53:54,709 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 23 subscriptions. Processing as FIFO.
+2026-03-11 16:53:56,977 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 23 subscriptions. Processing as FIFO.
+2026-03-11 16:53:58,565 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 22 subscriptions. Processing as FIFO.
+2026-03-11 16:54:00,438 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 22 subscriptions. Processing as FIFO.
+2026-03-11 16:54:00,577 | INFO     | uvicorn.access:send:480 - 127.0.0.1:56891 - "GET /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 16:54:01,905 | INFO     | uvicorn.access:send:480 - 127.0.0.1:56891 - "OPTIONS /api/positions HTTP/1.1" 200
+2026-03-11 16:54:01,910 | INFO     | uvicorn.access:send:480 - 127.0.0.1:56894 - "OPTIONS /api/positions HTTP/1.1" 200
+2026-03-11 16:54:01,931 | INFO     | uvicorn.access:send:480 - 127.0.0.1:56894 - "GET /api/positions HTTP/1.1" 200
+2026-03-11 16:54:01,935 | INFO     | uvicorn.access:send:480 - 127.0.0.1:56891 - "GET /api/positions HTTP/1.1" 200
+2026-03-11 16:54:02,211 | INFO     | uvicorn.error:asgi_send:270 - 127.0.0.1:56907 - "WebSocket /ws/prices?api_key=tugou_secret_key" [accepted]
+2026-03-11 16:54:02,211 | INFO     | uvicorn.error:asgi_send:270 - 127.0.0.1:56907 - "WebSocket /ws/prices?api_key=tugou_secret_key" [accepted]
+2026-03-11 16:54:02,215 | INFO     | uvicorn.error:handshake:643 - connection open
+2026-03-11 16:54:02,215 | INFO     | uvicorn.error:handshake:643 - connection open
+2026-03-11 16:54:02,729 | INFO     | uvicorn.error:handler:264 - connection closed
+2026-03-11 16:54:02,729 | INFO     | uvicorn.error:handler:264 - connection closed
+2026-03-11 16:54:02,735 | INFO     | uvicorn.access:send:480 - 127.0.0.1:56891 - "OPTIONS /api/status HTTP/1.1" 200
+2026-03-11 16:54:02,735 | INFO     | uvicorn.access:send:480 - 127.0.0.1:56894 - "OPTIONS /api/trades?page=1&limit=500 HTTP/1.1" 200
+2026-03-11 16:54:02,736 | INFO     | uvicorn.access:send:480 - 127.0.0.1:56891 - "OPTIONS /api/status HTTP/1.1" 200
+2026-03-11 16:54:02,738 | INFO     | uvicorn.access:send:480 - 127.0.0.1:56894 - "OPTIONS /api/trades?page=1&limit=500 HTTP/1.1" 200
+2026-03-11 16:54:02,806 | INFO     | uvicorn.access:send:480 - 127.0.0.1:56894 - "GET /api/trades?page=1&limit=500 HTTP/1.1" 200
+2026-03-11 16:54:02,820 | INFO     | uvicorn.access:send:480 - 127.0.0.1:56891 - "GET /api/status HTTP/1.1" 200
+2026-03-11 16:54:02,846 | INFO     | uvicorn.access:send:480 - 127.0.0.1:56894 - "GET /api/trades?page=1&limit=500 HTTP/1.1" 200
+2026-03-11 16:54:02,852 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 23 subscriptions. Processing as FIFO.
+2026-03-11 16:54:02,863 | INFO     | uvicorn.access:send:480 - 127.0.0.1:56891 - "GET /api/status HTTP/1.1" 200
+2026-03-11 16:54:05,261 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 24 subscriptions. Processing as FIFO.
+2026-03-11 16:54:05,264 | INFO     | uvicorn.access:send:480 - 127.0.0.1:56891 - "GET /api/positions HTTP/1.1" 200
+2026-03-11 16:54:05,266 | INFO     | uvicorn.access:send:480 - 127.0.0.1:56894 - "GET /api/positions HTTP/1.1" 200
+2026-03-11 16:54:05,570 | INFO     | uvicorn.error:asgi_send:270 - 127.0.0.1:56944 - "WebSocket /ws/prices?api_key=tugou_secret_key" [accepted]
+2026-03-11 16:54:05,570 | INFO     | uvicorn.error:asgi_send:270 - 127.0.0.1:56944 - "WebSocket /ws/prices?api_key=tugou_secret_key" [accepted]
+2026-03-11 16:54:05,570 | INFO     | uvicorn.error:handshake:643 - connection open
+2026-03-11 16:54:05,570 | INFO     | uvicorn.error:handshake:643 - connection open
+2026-03-11 16:54:07,298 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 24 subscriptions. Processing as FIFO.
+2026-03-11 16:54:07,302 | INFO     | uvicorn.error:handler:264 - connection closed
+2026-03-11 16:54:07,302 | INFO     | uvicorn.error:handler:264 - connection closed
+2026-03-11 16:54:07,347 | INFO     | uvicorn.access:send:480 - 127.0.0.1:56894 - "GET /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 16:54:07,386 | INFO     | uvicorn.access:send:480 - 127.0.0.1:56891 - "GET /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 16:54:07,838 | INFO     | uvicorn.access:send:480 - 127.0.0.1:56891 - "GET /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 16:54:08,306 | INFO     | uvicorn.access:send:480 - 127.0.0.1:56891 - "GET /api/positions HTTP/1.1" 200
+2026-03-11 16:54:08,308 | INFO     | uvicorn.access:send:480 - 127.0.0.1:56894 - "GET /api/positions HTTP/1.1" 200
+2026-03-11 16:54:08,617 | INFO     | uvicorn.error:asgi_send:270 - 127.0.0.1:56977 - "WebSocket /ws/prices?api_key=tugou_secret_key" [accepted]
+2026-03-11 16:54:08,617 | INFO     | uvicorn.error:asgi_send:270 - 127.0.0.1:56977 - "WebSocket /ws/prices?api_key=tugou_secret_key" [accepted]
+2026-03-11 16:54:08,618 | INFO     | uvicorn.error:handshake:643 - connection open
+2026-03-11 16:54:08,618 | INFO     | uvicorn.error:handshake:643 - connection open
+2026-03-11 16:54:08,908 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 23 subscriptions. Processing as FIFO.
+2026-03-11 16:54:09,090 | INFO     | uvicorn.error:handler:264 - connection closed
+2026-03-11 16:54:09,090 | INFO     | uvicorn.error:handler:264 - connection closed
+2026-03-11 16:54:09,128 | INFO     | uvicorn.access:send:480 - 127.0.0.1:56891 - "GET /api/trades?page=1&limit=500 HTTP/1.1" 200
+2026-03-11 16:54:09,134 | INFO     | uvicorn.access:send:480 - 127.0.0.1:56894 - "GET /api/status HTTP/1.1" 200
+2026-03-11 16:54:09,161 | INFO     | uvicorn.access:send:480 - 127.0.0.1:56918 - "GET /api/trades?page=1&limit=500 HTTP/1.1" 200
+2026-03-11 16:54:09,169 | INFO     | uvicorn.access:send:480 - 127.0.0.1:56891 - "GET /api/status HTTP/1.1" 200
+2026-03-11 16:54:09,871 | INFO     | uvicorn.access:send:480 - 127.0.0.1:56891 - "GET /api/positions HTTP/1.1" 200
+2026-03-11 16:54:09,876 | INFO     | uvicorn.access:send:480 - 127.0.0.1:56918 - "GET /api/positions HTTP/1.1" 200
+2026-03-11 16:54:10,151 | INFO     | uvicorn.error:asgi_send:270 - 127.0.0.1:57020 - "WebSocket /ws/prices?api_key=tugou_secret_key" [accepted]
+2026-03-11 16:54:10,151 | INFO     | uvicorn.error:asgi_send:270 - 127.0.0.1:57020 - "WebSocket /ws/prices?api_key=tugou_secret_key" [accepted]
+2026-03-11 16:54:10,152 | INFO     | uvicorn.error:handshake:643 - connection open
+2026-03-11 16:54:10,152 | INFO     | uvicorn.error:handshake:643 - connection open
+2026-03-11 16:54:10,728 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 23 subscriptions. Processing as FIFO.
+2026-03-11 16:54:11,109 | INFO     | uvicorn.error:handler:264 - connection closed
+2026-03-11 16:54:11,109 | INFO     | uvicorn.error:handler:264 - connection closed
+2026-03-11 16:54:11,146 | INFO     | uvicorn.access:send:480 - 127.0.0.1:56891 - "GET /api/trades?page=1&limit=500 HTTP/1.1" 200
+2026-03-11 16:54:11,166 | INFO     | uvicorn.access:send:480 - 127.0.0.1:56918 - "GET /api/status HTTP/1.1" 200
+2026-03-11 16:54:11,193 | INFO     | uvicorn.access:send:480 - 127.0.0.1:56894 - "GET /api/trades?page=1&limit=500 HTTP/1.1" 200
+2026-03-11 16:54:11,209 | INFO     | uvicorn.access:send:480 - 127.0.0.1:56891 - "GET /api/status HTTP/1.1" 200
+2026-03-11 16:54:13,514 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 22 subscriptions. Processing as FIFO.
+2026-03-11 16:54:14,488 | INFO     | bsc_bot.analyzer.local_simulator:find_balance_slot:135 - Found balance slot for 0x71e804C36dc21E7525e41918Bf4e88170a088689: 0
+2026-03-11 16:54:15,143 | INFO     | bsc_bot.analyzer.local_simulator:find_allowance_slot:193 - Found allowance slot for 0x71e804C36dc21E7525e41918Bf4e88170a088689: 1
+2026-03-11 16:54:15,167 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 22 subscriptions. Processing as FIFO.
+2026-03-11 16:54:16,773 | INFO     | bsc_bot.analyzer.local_simulator:find_balance_slot:135 - Found balance slot for 0x71e804C36dc21E7525e41918Bf4e88170a088689: 0
+2026-03-11 16:54:20,685 | INFO     | bsc_bot.analyzer.local_simulator:find_balance_slot:135 - Found balance slot for 0xD46a03965A7b9412eE069218aA48030AEd4d0eb6: 0
+2026-03-11 16:54:21,136 | INFO     | uvicorn.access:send:480 - 127.0.0.1:56919 - "GET /api/status HTTP/1.1" 200
+2026-03-11 16:54:21,501 | INFO     | bsc_bot.analyzer.local_simulator:find_allowance_slot:193 - Found allowance slot for 0xD46a03965A7b9412eE069218aA48030AEd4d0eb6: 1
+2026-03-11 16:54:23,346 | WARNING  | utils.dexscreener_client:get_batch_prices:84 - DexScreener batch fetch failed: Cannot connect to host api.dexscreener.com:443 ssl:default [远程主机强迫关闭了一个现有的连接。]
+2026-03-11 16:54:25,727 | INFO     | uvicorn.access:send:480 - 127.0.0.1:56919 - "GET /api/positions HTTP/1.1" 200
+2026-03-11 16:54:25,728 | INFO     | uvicorn.access:send:480 - 127.0.0.1:56920 - "GET /api/positions HTTP/1.1" 200
+2026-03-11 16:54:26,027 | INFO     | uvicorn.error:asgi_send:270 - 127.0.0.1:57536 - "WebSocket /ws/prices?api_key=tugou_secret_key" [accepted]
+2026-03-11 16:54:26,027 | INFO     | uvicorn.error:asgi_send:270 - 127.0.0.1:57536 - "WebSocket /ws/prices?api_key=tugou_secret_key" [accepted]
+2026-03-11 16:54:26,028 | INFO     | uvicorn.error:handshake:643 - connection open
+2026-03-11 16:54:26,028 | INFO     | uvicorn.error:handshake:643 - connection open
+2026-03-11 16:54:26,700 | INFO     | uvicorn.error:handler:264 - connection closed
+2026-03-11 16:54:26,700 | INFO     | uvicorn.error:handler:264 - connection closed
+2026-03-11 16:54:26,777 | INFO     | uvicorn.access:send:480 - 127.0.0.1:56919 - "GET /api/trades?page=1&limit=500 HTTP/1.1" 200
+2026-03-11 16:54:26,785 | INFO     | uvicorn.access:send:480 - 127.0.0.1:56920 - "GET /api/status HTTP/1.1" 200
+2026-03-11 16:54:26,811 | INFO     | uvicorn.access:send:480 - 127.0.0.1:56921 - "GET /api/trades?page=1&limit=500 HTTP/1.1" 200
+2026-03-11 16:54:26,822 | INFO     | uvicorn.access:send:480 - 127.0.0.1:56919 - "GET /api/status HTTP/1.1" 200
+2026-03-11 16:54:27,734 | INFO     | bsc_bot.analyzer.local_simulator:find_allowance_slot:193 - Found allowance slot for 0x71e804C36dc21E7525e41918Bf4e88170a088689: 1
+2026-03-11 16:54:28,081 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 29 subscriptions. Processing as FIFO.
+2026-03-11 16:54:30,646 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 28 subscriptions. Processing as FIFO.
+2026-03-11 16:54:32,602 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 27 subscriptions. Processing as FIFO.
+2026-03-11 16:54:33,948 | INFO     | bsc_bot.analyzer.local_simulator:find_balance_slot:135 - Found balance slot for 0xD46a03965A7b9412eE069218aA48030AEd4d0eb6: 0
+2026-03-11 16:54:35,480 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 28 subscriptions. Processing as FIFO.
+2026-03-11 16:54:36,211 | INFO     | uvicorn.access:send:480 - 127.0.0.1:57698 - "GET /api/positions HTTP/1.1" 200
+2026-03-11 16:54:36,212 | INFO     | uvicorn.error:asgi_send:270 - 127.0.0.1:57697 - "WebSocket /ws/prices?api_key=tugou_secret_key" [accepted]
+2026-03-11 16:54:36,212 | INFO     | uvicorn.error:asgi_send:270 - 127.0.0.1:57697 - "WebSocket /ws/prices?api_key=tugou_secret_key" [accepted]
+2026-03-11 16:54:36,214 | INFO     | uvicorn.error:handshake:643 - connection open
+2026-03-11 16:54:36,214 | INFO     | uvicorn.error:handshake:643 - connection open
+2026-03-11 16:54:36,215 | INFO     | uvicorn.access:send:480 - 127.0.0.1:57698 - "GET /api/positions HTTP/1.1" 200
+2026-03-11 16:54:37,102 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 27 subscriptions. Processing as FIFO.
+2026-03-11 16:54:37,500 | INFO     | uvicorn.error:handler:264 - connection closed
+2026-03-11 16:54:37,500 | INFO     | uvicorn.error:handler:264 - connection closed
+2026-03-11 16:54:37,539 | INFO     | uvicorn.access:send:480 - 127.0.0.1:57709 - "GET /api/trades?page=1&limit=500 HTTP/1.1" 200
+2026-03-11 16:54:37,562 | INFO     | uvicorn.access:send:480 - 127.0.0.1:57698 - "GET /api/status HTTP/1.1" 200
+2026-03-11 16:54:37,588 | INFO     | uvicorn.access:send:480 - 127.0.0.1:57710 - "GET /api/trades?page=1&limit=500 HTTP/1.1" 200
+2026-03-11 16:54:37,599 | INFO     | uvicorn.access:send:480 - 127.0.0.1:57709 - "GET /api/status HTTP/1.1" 200
+2026-03-11 16:54:38,109 | INFO     | bsc_bot.analyzer.local_simulator:find_allowance_slot:193 - Found allowance slot for 0xD46a03965A7b9412eE069218aA48030AEd4d0eb6: 1
+2026-03-11 16:54:39,328 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 28 subscriptions. Processing as FIFO.
+2026-03-11 16:54:41,254 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 28 subscriptions. Processing as FIFO.
+2026-03-11 16:54:43,249 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 29 subscriptions. Processing as FIFO.
+2026-03-11 16:54:44,906 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 28 subscriptions. Processing as FIFO.
+2026-03-11 16:54:47,189 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 29 subscriptions. Processing as FIFO.
+2026-03-11 16:54:47,830 | INFO     | uvicorn.access:send:480 - 127.0.0.1:57833 - "GET /api/status HTTP/1.1" 200
+2026-03-11 16:54:48,306 | INFO     | uvicorn.access:send:480 - 127.0.0.1:57833 - "GET /api/positions HTTP/1.1" 200
+2026-03-11 16:54:48,312 | INFO     | uvicorn.access:send:480 - 127.0.0.1:57835 - "GET /api/positions HTTP/1.1" 200
+2026-03-11 16:54:48,619 | INFO     | uvicorn.error:asgi_send:270 - 127.0.0.1:57852 - "WebSocket /ws/prices?api_key=tugou_secret_key" [accepted]
+2026-03-11 16:54:48,619 | INFO     | uvicorn.error:asgi_send:270 - 127.0.0.1:57852 - "WebSocket /ws/prices?api_key=tugou_secret_key" [accepted]
+2026-03-11 16:54:48,620 | INFO     | uvicorn.error:handshake:643 - connection open
+2026-03-11 16:54:48,620 | INFO     | uvicorn.error:handshake:643 - connection open
+2026-03-11 16:54:49,242 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 28 subscriptions. Processing as FIFO.
+2026-03-11 16:54:50,501 | INFO     | uvicorn.error:handler:264 - connection closed
+2026-03-11 16:54:50,501 | INFO     | uvicorn.error:handler:264 - connection closed
+2026-03-11 16:54:50,537 | INFO     | uvicorn.access:send:480 - 127.0.0.1:57833 - "GET /api/trades?page=1&limit=500 HTTP/1.1" 200
+2026-03-11 16:54:50,556 | INFO     | uvicorn.access:send:480 - 127.0.0.1:57835 - "GET /api/status HTTP/1.1" 200
+2026-03-11 16:54:50,586 | INFO     | uvicorn.access:send:480 - 127.0.0.1:57833 - "GET /api/trades?page=1&limit=500 HTTP/1.1" 200
+2026-03-11 16:54:50,595 | INFO     | uvicorn.access:send:480 - 127.0.0.1:57835 - "GET /api/status HTTP/1.1" 200
+2026-03-11 16:54:52,516 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 28 subscriptions. Processing as FIFO.
+2026-03-11 16:54:54,155 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 27 subscriptions. Processing as FIFO.
+2026-03-11 16:54:55,331 | WARNING  | utils.dexscreener_client:get_batch_prices:84 - DexScreener batch fetch failed: Cannot connect to host api.dexscreener.com:443 ssl:default [远程主机强迫关闭了一个现有的连接。]
+2026-03-11 16:54:55,765 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 26 subscriptions. Processing as FIFO.
+2026-03-11 16:54:58,607 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 27 subscriptions. Processing as FIFO.
+2026-03-11 16:55:00,169 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 30 subscriptions. Processing as FIFO.
+2026-03-11 16:55:01,128 | INFO     | uvicorn.access:send:480 - 127.0.0.1:57870 - "GET /api/status HTTP/1.1" 200
+2026-03-11 16:55:08,386 | INFO     | uvicorn.access:send:480 - 127.0.0.1:57871 - "GET /api/positions HTTP/1.1" 200
+2026-03-11 16:55:08,389 | INFO     | uvicorn.access:send:480 - 127.0.0.1:57871 - "GET /api/positions HTTP/1.1" 200
+2026-03-11 16:55:08,686 | INFO     | uvicorn.error:asgi_send:270 - 127.0.0.1:58024 - "WebSocket /ws/prices?api_key=tugou_secret_key" [accepted]
+2026-03-11 16:55:08,686 | INFO     | uvicorn.error:asgi_send:270 - 127.0.0.1:58024 - "WebSocket /ws/prices?api_key=tugou_secret_key" [accepted]
+2026-03-11 16:55:08,687 | INFO     | uvicorn.error:handshake:643 - connection open
+2026-03-11 16:55:08,687 | INFO     | uvicorn.error:handshake:643 - connection open
+2026-03-11 16:55:09,796 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 32 subscriptions. Processing as FIFO.
+2026-03-11 16:55:09,994 | INFO     | uvicorn.error:handler:264 - connection closed
+2026-03-11 16:55:09,994 | INFO     | uvicorn.error:handler:264 - connection closed
+2026-03-11 16:55:10,028 | INFO     | uvicorn.access:send:480 - 127.0.0.1:58025 - "GET /api/trades?page=1&limit=500 HTTP/1.1" 200
+2026-03-11 16:55:10,033 | INFO     | uvicorn.access:send:480 - 127.0.0.1:57871 - "GET /api/status HTTP/1.1" 200
+2026-03-11 16:55:10,064 | INFO     | uvicorn.access:send:480 - 127.0.0.1:58025 - "GET /api/trades?page=1&limit=500 HTTP/1.1" 200
+2026-03-11 16:55:10,068 | INFO     | uvicorn.access:send:480 - 127.0.0.1:57871 - "GET /api/status HTTP/1.1" 200
+2026-03-11 16:55:11,029 | INFO     | uvicorn.access:send:480 - 127.0.0.1:57871 - "GET /api/positions HTTP/1.1" 200
+2026-03-11 16:55:11,031 | INFO     | uvicorn.access:send:480 - 127.0.0.1:58025 - "GET /api/positions HTTP/1.1" 200
+2026-03-11 16:55:11,340 | INFO     | uvicorn.error:asgi_send:270 - 127.0.0.1:58046 - "WebSocket /ws/prices?api_key=tugou_secret_key" [accepted]
+2026-03-11 16:55:11,340 | INFO     | uvicorn.error:asgi_send:270 - 127.0.0.1:58046 - "WebSocket /ws/prices?api_key=tugou_secret_key" [accepted]
+2026-03-11 16:55:11,342 | INFO     | uvicorn.error:handshake:643 - connection open
+2026-03-11 16:55:11,342 | INFO     | uvicorn.error:handshake:643 - connection open
+2026-03-11 16:55:11,490 | INFO     | web3.providers.WebSocketProvider:disconnect:267 - Message listener background task successfully shut down.
+2026-03-11 16:55:11,625 | INFO     | web3.providers.WebSocketProvider:disconnect:271 - Successfully disconnected from: wss://bsc-mainnet.nodereal.io/ws/v1/64a9df0874fb4a93b9d0a3849de012d3
+2026-03-11 16:55:12,066 | INFO     | uvicorn.error:handler:264 - connection closed
+2026-03-11 16:55:12,066 | INFO     | uvicorn.error:handler:264 - connection closed
+2026-03-11 16:55:12,100 | INFO     | uvicorn.access:send:480 - 127.0.0.1:57871 - "GET /api/trades?page=1&limit=500 HTTP/1.1" 200
+2026-03-11 16:55:12,104 | INFO     | uvicorn.access:send:480 - 127.0.0.1:58025 - "GET /api/status HTTP/1.1" 200
+2026-03-11 16:55:12,134 | INFO     | uvicorn.access:send:480 - 127.0.0.1:58038 - "GET /api/trades?page=1&limit=500 HTTP/1.1" 200
+2026-03-11 16:55:12,147 | INFO     | uvicorn.access:send:480 - 127.0.0.1:57871 - "GET /api/status HTTP/1.1" 200
+2026-03-11 16:55:16,466 | INFO     | uvicorn.access:send:480 - 127.0.0.1:57871 - "OPTIONS /api/stats/daily?days=7 HTTP/1.1" 200
+2026-03-11 16:55:16,469 | INFO     | uvicorn.access:send:480 - 127.0.0.1:58025 - "OPTIONS /api/stats/daily?days=7 HTTP/1.1" 200
+2026-03-11 16:55:16,471 | INFO     | uvicorn.access:send:480 - 127.0.0.1:58038 - "OPTIONS /api/simulation/stats?days=7 HTTP/1.1" 200
+2026-03-11 16:55:16,472 | INFO     | uvicorn.access:send:480 - 127.0.0.1:58039 - "OPTIONS /api/simulation/stats?days=7 HTTP/1.1" 200
+2026-03-11 16:55:16,513 | INFO     | uvicorn.access:send:480 - 127.0.0.1:58038 - "GET /api/simulation/stats?days=7 HTTP/1.1" 200
+2026-03-11 16:55:16,516 | INFO     | uvicorn.access:send:480 - 127.0.0.1:58025 - "GET /api/stats/daily?days=7 HTTP/1.1" 200
+2026-03-11 16:55:16,556 | INFO     | uvicorn.access:send:480 - 127.0.0.1:57871 - "GET /api/status HTTP/1.1" 200
+2026-03-11 16:55:16,557 | INFO     | uvicorn.access:send:480 - 127.0.0.1:58039 - "GET /api/simulation/stats?days=7 HTTP/1.1" 200
+2026-03-11 16:55:16,565 | INFO     | uvicorn.access:send:480 - 127.0.0.1:58038 - "GET /api/stats/daily?days=7 HTTP/1.1" 200
+2026-03-11 16:55:16,579 | INFO     | uvicorn.access:send:480 - 127.0.0.1:58025 - "GET /api/status HTTP/1.1" 200
+2026-03-11 16:55:18,561 | INFO     | uvicorn.access:send:480 - 127.0.0.1:58038 - "GET /api/trades?page=1&limit=500 HTTP/1.1" 200
+2026-03-11 16:55:18,567 | INFO     | uvicorn.access:send:480 - 127.0.0.1:58025 - "GET /api/status HTTP/1.1" 200
+2026-03-11 16:55:18,607 | INFO     | uvicorn.access:send:480 - 127.0.0.1:58039 - "GET /api/trades?page=1&limit=500 HTTP/1.1" 200
+2026-03-11 16:55:18,615 | INFO     | uvicorn.access:send:480 - 127.0.0.1:58038 - "GET /api/status HTTP/1.1" 200
+2026-03-11 16:55:29,146 | INFO     | uvicorn.access:send:480 - 127.0.0.1:58103 - "GET /api/status HTTP/1.1" 200
+2026-03-11 16:55:39,518 | INFO     | uvicorn.access:send:480 - 127.0.0.1:58268 - "GET /api/status HTTP/1.1" 200
+2026-03-11 16:55:49,132 | INFO     | uvicorn.access:send:480 - 127.0.0.1:58271 - "GET /api/status HTTP/1.1" 200
+2026-03-11 16:55:59,446 | INFO     | uvicorn.access:send:480 - 127.0.0.1:58441 - "GET /api/status HTTP/1.1" 200
+2026-03-11 16:56:09,161 | INFO     | uvicorn.access:send:480 - 127.0.0.1:58445 - "GET /api/status HTTP/1.1" 200
+2026-03-11 16:56:13,760 | INFO     | bsc_bot.analyzer.local_simulator:find_allowance_slot:193 - Found allowance slot for 0x7e1d38FDDe89FC25D03d337D40a90631F80B7A03: 1
+2026-03-11 16:56:13,878 | INFO     | bsc_bot.analyzer.local_simulator:find_balance_slot:135 - Found balance slot for 0x7e1d38FDDe89FC25D03d337D40a90631F80B7A03: 0
+2026-03-11 16:56:19,453 | INFO     | uvicorn.access:send:480 - 127.0.0.1:58814 - "GET /api/status HTTP/1.1" 200
+2026-03-11 16:56:22,293 | INFO     | bsc_bot.analyzer.local_simulator:find_allowance_slot:193 - Found allowance slot for 0x7e1d38FDDe89FC25D03d337D40a90631F80B7A03: 1
+2026-03-11 16:56:22,328 | INFO     | web3.providers.WebSocketProvider:connect:232 - Connecting to: wss://bsc-mainnet.nodereal.io/ws/v1/64a9df0874fb4a93b9d0a3849de012d3
+2026-03-11 16:56:23,166 | INFO     | web3.providers.WebSocketProvider:connect:240 - Successfully connected to: wss://bsc-mainnet.nodereal.io/ws/v1/64a9df0874fb4a93b9d0a3849de012d3
+2026-03-11 16:56:23,168 | INFO     | web3.providers.WebSocketProvider:_message_listener:408 - WebSocketProvider listener background task started. Storing all messages in appropriate request processor queues / caches to be processed.
+2026-03-11 16:56:23,388 | INFO     | web3.providers.persistent.subscription_manager:subscribe:163 - Successfully subscribed to subscription:
+    label: LogsSubscription('logs', {'address': '0x65c8Df35A5B670809b52C7c23223998ee2E160B1', 'topics': ['0xd78ad95fa46c994b6551d0da85fc275fe613ce37657fb8d5e3d130840159d822']})
+    id: 0x291b1e555a035576bc32a13b70bdc322
+2026-03-11 16:56:24,048 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:329 - Subscription response queue synced with websocket message stream.
+2026-03-11 16:56:33,266 | WARNING  | utils.dexscreener_client:get_token_data:40 - DexScreener fetch failed for 0x7e1d38FDDe89FC25D03d337D40a90631F80B7A03: 
+2026-03-11 16:56:38,280 | WARNING  | utils.dexscreener_client:get_batch_prices:84 - DexScreener batch fetch failed: 
+2026-03-11 16:56:49,280 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 2 subscriptions. Processing as FIFO.
+2026-03-11 16:56:52,406 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 1 subscriptions. Processing as FIFO.
+2026-03-11 16:56:53,945 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 2 subscriptions. Processing as FIFO.
+2026-03-11 16:56:55,853 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 1 subscriptions. Processing as FIFO.
+2026-03-11 16:56:58,713 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 5 subscriptions. Processing as FIFO.
+2026-03-11 16:57:00,907 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 4 subscriptions. Processing as FIFO.
+2026-03-11 16:57:03,181 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 5 subscriptions. Processing as FIFO.
+2026-03-11 16:57:03,952 | INFO     | uvicorn.error:shutdown:272 - Shutting down
+2026-03-11 16:57:03,952 | INFO     | uvicorn.error:shutdown:272 - Shutting down
+2026-03-11 16:57:04,072 | INFO     | uvicorn.error:shutdown:67 - Waiting for application shutdown.
+2026-03-11 16:57:04,072 | INFO     | uvicorn.error:shutdown:67 - Waiting for application shutdown.
+2026-03-11 16:57:04,077 | INFO     | uvicorn.error:shutdown:76 - Application shutdown complete.
+2026-03-11 16:57:04,077 | INFO     | uvicorn.error:shutdown:76 - Application shutdown complete.
+2026-03-11 16:57:04,077 | INFO     | uvicorn.error:_serve:102 - Finished server process [31020]
+2026-03-11 16:57:04,077 | INFO     | uvicorn.error:_serve:102 - Finished server process [31020]
+2026-03-11 16:57:04,078 | INFO     | web3.providers.WebSocketProvider:disconnect:267 - Message listener background task successfully shut down.
+2026-03-11 16:57:04,222 | INFO     | web3.providers.WebSocketProvider:disconnect:271 - Successfully disconnected from: wss://bsc-mainnet.nodereal.io/ws/v1/64a9df0874fb4a93b9d0a3849de012d3
+2026-03-11 16:57:04,363 | ERROR    | asyncio:default_exception_handler:1821 - Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x000001C57161BA40>
+2026-03-11 16:57:04,377 | ERROR    | asyncio:default_exception_handler:1821 - Unclosed connector
+connections: ['deque([(<aiohttp.client_proto.ResponseHandler object at 0x000001C574B84B90>, 71857.187)])', 'deque([(<aiohttp.client_proto.ResponseHandler object at 0x000001C574B87B90>, 71857.187)])', 'deque([(<aiohttp.client_proto.ResponseHandler object at 0x000001C5716CF170>, 71857.359)])', 'deque([(<aiohttp.client_proto.ResponseHandler object at 0x000001C574B85010>, 71858.531)])']
+connector: <aiohttp.connector.TCPConnector object at 0x000001C573965070>
+2026-03-11 16:57:04,382 | ERROR    | asyncio:default_exception_handler:1821 - Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x000001C57393DD90>
+2026-03-11 16:57:04,387 | ERROR    | asyncio:default_exception_handler:1821 - Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x000001C573973920>
+2026-03-11 16:57:04,406 | ERROR    | asyncio:default_exception_handler:1821 - Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x000001C574BB3830>
+2026-03-11 16:57:06,796 | INFO     | web.api:lifespan:64 - Initializing TradingBot... WITH_DEBUG_PRINTS_V2
+2026-03-11 16:57:12,316 | INFO     | web3.providers.WebSocketProvider:disconnect:267 - Message listener background task successfully shut down.
+2026-03-11 16:57:12,316 | INFO     | web3.providers.WebSocketProvider:disconnect:271 - Successfully disconnected from: wss://bsc-mainnet.nodereal.io/ws/v1/aeabb43a9a2d40deb0441e216d3962d6
+2026-03-11 16:57:16,403 | INFO     | uvicorn.error:startup:62 - Application startup complete.
+2026-03-11 16:57:16,403 | INFO     | uvicorn.error:startup:62 - Application startup complete.
+2026-03-11 16:57:16,404 | INFO     | web3.providers.WebSocketProvider:connect:232 - Connecting to: wss://bsc-mainnet.nodereal.io/ws/v1/64a9df0874fb4a93b9d0a3849de012d3
+2026-03-11 16:57:17,019 | INFO     | web3.providers.WebSocketProvider:connect:240 - Successfully connected to: wss://bsc-mainnet.nodereal.io/ws/v1/64a9df0874fb4a93b9d0a3849de012d3
+2026-03-11 16:57:17,020 | INFO     | web3.providers.WebSocketProvider:_message_listener:408 - WebSocketProvider listener background task started. Storing all messages in appropriate request processor queues / caches to be processed.
+2026-03-11 16:57:17,229 | INFO     | web3.providers.persistent.subscription_manager:subscribe:163 - Successfully subscribed to subscription:
+    label: LogsSubscription('logs', {'address': '0x65c8Df35A5B670809b52C7c23223998ee2E160B1', 'topics': ['0xd78ad95fa46c994b6551d0da85fc275fe613ce37657fb8d5e3d130840159d822']})
+    id: 0xdb34e12c346e43371fb0827c301b2d09
+2026-03-11 16:57:18,452 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:329 - Subscription response queue synced with websocket message stream.
+2026-03-11 16:57:19,463 | INFO     | uvicorn.access:send:480 - 127.0.0.1:59311 - "GET /api/status HTTP/1.1" 200
+2026-03-11 16:57:24,728 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 6 subscriptions. Processing as FIFO.
+2026-03-11 16:57:26,335 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 5 subscriptions. Processing as FIFO.
+2026-03-11 16:57:27,272 | WARNING  | utils.dexscreener_client:get_batch_prices:84 - DexScreener batch fetch failed: 
+2026-03-11 16:57:27,861 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 4 subscriptions. Processing as FIFO.
+2026-03-11 16:57:29,546 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 5 subscriptions. Processing as FIFO.
+2026-03-11 16:57:31,111 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 4 subscriptions. Processing as FIFO.
+2026-03-11 16:57:32,734 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 3 subscriptions. Processing as FIFO.
+2026-03-11 16:57:34,702 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 3 subscriptions. Processing as FIFO.
+2026-03-11 16:57:36,866 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 6 subscriptions. Processing as FIFO.
+2026-03-11 16:57:38,636 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 6 subscriptions. Processing as FIFO.
+2026-03-11 16:57:41,330 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 6 subscriptions. Processing as FIFO.
+2026-03-11 16:57:42,940 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 7 subscriptions. Processing as FIFO.
+2026-03-11 16:57:45,465 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 8 subscriptions. Processing as FIFO.
+2026-03-11 16:57:47,099 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 8 subscriptions. Processing as FIFO.
+2026-03-11 16:57:48,945 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 8 subscriptions. Processing as FIFO.
+2026-03-11 16:57:50,663 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 7 subscriptions. Processing as FIFO.
+2026-03-11 16:57:52,239 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 7 subscriptions. Processing as FIFO.
+2026-03-11 16:57:53,756 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 9 subscriptions. Processing as FIFO.
+2026-03-11 16:57:56,199 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 9 subscriptions. Processing as FIFO.
+2026-03-11 16:58:00,304 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 10 subscriptions. Processing as FIFO.
+2026-03-11 16:58:02,396 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 11 subscriptions. Processing as FIFO.
+2026-03-11 16:58:04,623 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 11 subscriptions. Processing as FIFO.
+2026-03-11 16:58:07,131 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 12 subscriptions. Processing as FIFO.
+2026-03-11 16:58:08,768 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 13 subscriptions. Processing as FIFO.
+2026-03-11 16:58:10,276 | WARNING  | utils.dexscreener_client:get_batch_prices:84 - DexScreener batch fetch failed: 
+2026-03-11 16:58:10,913 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 12 subscriptions. Processing as FIFO.
+2026-03-11 16:58:13,049 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 14 subscriptions. Processing as FIFO.
+2026-03-11 16:58:14,883 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 15 subscriptions. Processing as FIFO.
+2026-03-11 16:58:16,841 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 14 subscriptions. Processing as FIFO.
+2026-03-11 16:58:18,815 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 13 subscriptions. Processing as FIFO.
+2026-03-11 16:58:19,167 | INFO     | uvicorn.access:send:480 - 127.0.0.1:59313 - "GET /api/status HTTP/1.1" 200
+2026-03-11 16:58:19,954 | INFO     | uvicorn.error:shutdown:272 - Shutting down
+2026-03-11 16:58:19,954 | INFO     | uvicorn.error:shutdown:272 - Shutting down
+2026-03-11 16:58:20,076 | INFO     | uvicorn.error:shutdown:67 - Waiting for application shutdown.
+2026-03-11 16:58:20,076 | INFO     | uvicorn.error:shutdown:67 - Waiting for application shutdown.
+2026-03-11 16:58:20,079 | INFO     | uvicorn.error:shutdown:76 - Application shutdown complete.
+2026-03-11 16:58:20,079 | INFO     | uvicorn.error:shutdown:76 - Application shutdown complete.
+2026-03-11 16:58:20,079 | INFO     | uvicorn.error:_serve:102 - Finished server process [17860]
+2026-03-11 16:58:20,079 | INFO     | uvicorn.error:_serve:102 - Finished server process [17860]
+2026-03-11 16:58:20,080 | INFO     | web3.providers.WebSocketProvider:disconnect:267 - Message listener background task successfully shut down.
+2026-03-11 16:58:20,217 | INFO     | web3.providers.WebSocketProvider:disconnect:271 - Successfully disconnected from: wss://bsc-mainnet.nodereal.io/ws/v1/64a9df0874fb4a93b9d0a3849de012d3
+2026-03-11 16:58:20,310 | ERROR    | asyncio:default_exception_handler:1821 - Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x00000215D843A540>
+2026-03-11 16:58:20,311 | ERROR    | asyncio:default_exception_handler:1821 - Unclosed connector
+connections: ['deque([(<aiohttp.client_proto.ResponseHandler object at 0x00000215E4982930>, 71913.031)])', 'deque([(<aiohttp.client_proto.ResponseHandler object at 0x00000215E4983590>, 71913.703)])']
+connector: <aiohttp.connector.TCPConnector object at 0x00000215E49A4BC0>
+2026-03-11 16:58:20,312 | ERROR    | asyncio:default_exception_handler:1821 - Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x00000215D877A7E0>
+2026-03-11 16:58:20,313 | ERROR    | asyncio:default_exception_handler:1821 - Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x00000215E49CD040>
+2026-03-11 16:58:21,922 | INFO     | web.api:lifespan:64 - Initializing TradingBot... WITH_DEBUG_PRINTS_V2
+2026-03-11 16:58:27,301 | INFO     | web3.providers.WebSocketProvider:disconnect:267 - Message listener background task successfully shut down.
+2026-03-11 16:58:27,301 | INFO     | web3.providers.WebSocketProvider:disconnect:271 - Successfully disconnected from: wss://bsc-mainnet.nodereal.io/ws/v1/aeabb43a9a2d40deb0441e216d3962d6
+2026-03-11 16:58:32,802 | INFO     | uvicorn.error:startup:62 - Application startup complete.
+2026-03-11 16:58:32,802 | INFO     | uvicorn.error:startup:62 - Application startup complete.
+2026-03-11 16:58:32,803 | INFO     | web3.providers.WebSocketProvider:connect:232 - Connecting to: wss://bsc-mainnet.nodereal.io/ws/v1/64a9df0874fb4a93b9d0a3849de012d3
+2026-03-11 16:58:32,804 | INFO     | uvicorn.error:shutdown:272 - Shutting down
+2026-03-11 16:58:32,804 | INFO     | uvicorn.error:shutdown:272 - Shutting down
+2026-03-11 16:58:33,070 | INFO     | uvicorn.error:shutdown:67 - Waiting for application shutdown.
+2026-03-11 16:58:33,070 | INFO     | uvicorn.error:shutdown:67 - Waiting for application shutdown.
+2026-03-11 16:58:33,073 | INFO     | uvicorn.error:shutdown:76 - Application shutdown complete.
+2026-03-11 16:58:33,073 | INFO     | uvicorn.error:shutdown:76 - Application shutdown complete.
+2026-03-11 16:58:33,074 | INFO     | uvicorn.error:_serve:102 - Finished server process [33444]
+2026-03-11 16:58:33,074 | INFO     | uvicorn.error:_serve:102 - Finished server process [33444]
+2026-03-11 16:58:33,170 | ERROR    | asyncio:default_exception_handler:1821 - Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x00000201E9642330>
+2026-03-11 16:58:33,177 | ERROR    | asyncio:default_exception_handler:1821 - Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x00000201DC958140>
+2026-03-11 16:58:33,179 | ERROR    | asyncio:default_exception_handler:1821 - Unclosed connector
+connections: ['deque([(<aiohttp.client_proto.ResponseHandler object at 0x00000201E962B3B0>, 71953.109)])', 'deque([(<aiohttp.client_proto.ResponseHandler object at 0x00000201E962B230>, 71953.296)])', 'deque([(<aiohttp.client_proto.ResponseHandler object at 0x00000201E962B0B0>, 71953.406)])']
+connector: <aiohttp.connector.TCPConnector object at 0x00000201E9664DD0>
+2026-03-11 16:58:33,180 | ERROR    | asyncio:default_exception_handler:1821 - Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x00000201DC567F50>
+2026-03-11 16:58:33,180 | ERROR    | asyncio:default_exception_handler:1821 - Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x00000201E9670BF0>
+2026-03-11 16:58:35,368 | INFO     | web.api:lifespan:64 - Initializing TradingBot... WITH_DEBUG_PRINTS_V2
+2026-03-11 16:58:41,319 | INFO     | web3.providers.WebSocketProvider:disconnect:267 - Message listener background task successfully shut down.
+2026-03-11 16:58:41,320 | INFO     | web3.providers.WebSocketProvider:disconnect:271 - Successfully disconnected from: wss://bsc-mainnet.nodereal.io/ws/v1/aeabb43a9a2d40deb0441e216d3962d6
+2026-03-11 16:58:46,313 | INFO     | uvicorn.error:startup:62 - Application startup complete.
+2026-03-11 16:58:46,313 | INFO     | uvicorn.error:startup:62 - Application startup complete.
+2026-03-11 16:58:46,315 | INFO     | web3.providers.WebSocketProvider:connect:232 - Connecting to: wss://bsc-mainnet.nodereal.io/ws/v1/64a9df0874fb4a93b9d0a3849de012d3
+2026-03-11 16:58:46,332 | INFO     | uvicorn.access:send:480 - 127.0.0.1:59892 - "GET /api/positions HTTP/1.1" 200
+2026-03-11 16:58:46,335 | INFO     | uvicorn.error:asgi_send:270 - 127.0.0.1:59912 - "WebSocket /ws/prices?api_key=tugou_secret_key" [accepted]
+2026-03-11 16:58:46,335 | INFO     | uvicorn.error:asgi_send:270 - 127.0.0.1:59912 - "WebSocket /ws/prices?api_key=tugou_secret_key" [accepted]
+2026-03-11 16:58:46,336 | INFO     | uvicorn.error:handler:264 - connection closed
+2026-03-11 16:58:46,336 | INFO     | uvicorn.error:handler:264 - connection closed
+2026-03-11 16:58:46,614 | INFO     | uvicorn.access:send:480 - 127.0.0.1:59982 - "GET /api/status HTTP/1.1" 200
+2026-03-11 16:58:46,705 | WARNING  | utils.dexscreener_client:get_batch_prices:84 - DexScreener batch fetch failed: Cannot connect to host api.dexscreener.com:443 ssl:default [远程主机强迫关闭了一个现有的连接。]
+2026-03-11 16:58:47,011 | INFO     | web3.providers.WebSocketProvider:connect:240 - Successfully connected to: wss://bsc-mainnet.nodereal.io/ws/v1/64a9df0874fb4a93b9d0a3849de012d3
+2026-03-11 16:58:47,013 | INFO     | web3.providers.WebSocketProvider:_message_listener:408 - WebSocketProvider listener background task started. Storing all messages in appropriate request processor queues / caches to be processed.
+2026-03-11 16:58:47,221 | INFO     | web3.providers.persistent.subscription_manager:subscribe:163 - Successfully subscribed to subscription:
+    label: LogsSubscription('logs', {'address': '0x65c8Df35A5B670809b52C7c23223998ee2E160B1', 'topics': ['0xd78ad95fa46c994b6551d0da85fc275fe613ce37657fb8d5e3d130840159d822']})
+    id: 0x98b5362f7034936c789209ecce64292
+2026-03-11 16:58:50,712 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:329 - Subscription response queue synced with websocket message stream.
+2026-03-11 16:58:53,131 | INFO     | uvicorn.access:send:480 - 127.0.0.1:59981 - "GET /api/status HTTP/1.1" 200
+2026-03-11 16:58:57,693 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 4 subscriptions. Processing as FIFO.
+2026-03-11 16:58:59,301 | INFO     | web3.providers.WebSocketProvider:pop_raw_response:336 - Subscription response queue has 4 subscriptions. Processing as FIFO.
+2026-03-11 16:59:00,972 | INFO     | web3.providers.WebSocketProvider:disconnect:267 - Message listener background task successfully shut down.
+2026-03-11 16:59:01,109 | INFO     | web3.providers.WebSocketProvider:disconnect:271 - Successfully disconnected from: wss://bsc-mainnet.nodereal.io/ws/v1/64a9df0874fb4a93b9d0a3849de012d3
+2026-03-11 16:59:03,123 | INFO     | uvicorn.access:send:480 - 127.0.0.1:59983 - "GET /api/status HTTP/1.1" 200
+2026-03-11 16:59:13,282 | INFO     | uvicorn.access:send:480 - 127.0.0.1:60234 - "GET /api/status HTTP/1.1" 200
+2026-03-11 16:59:13,286 | INFO     | uvicorn.access:send:480 - 127.0.0.1:60234 - "GET /api/positions HTTP/1.1" 200
+2026-03-11 16:59:13,291 | INFO     | uvicorn.access:send:480 - 127.0.0.1:60234 - "GET /api/positions HTTP/1.1" 200
+2026-03-11 16:59:13,299 | INFO     | uvicorn.error:asgi_send:270 - 127.0.0.1:60236 - "WebSocket /ws/prices?api_key=tugou_secret_key" [accepted]
+2026-03-11 16:59:13,299 | INFO     | uvicorn.error:asgi_send:270 - 127.0.0.1:60236 - "WebSocket /ws/prices?api_key=tugou_secret_key" [accepted]
+2026-03-11 16:59:13,300 | INFO     | uvicorn.error:handshake:643 - connection open
+2026-03-11 16:59:13,300 | INFO     | uvicorn.error:handshake:643 - connection open
+2026-03-11 16:59:14,057 | INFO     | uvicorn.error:handler:264 - connection closed
+2026-03-11 16:59:14,057 | INFO     | uvicorn.error:handler:264 - connection closed
+2026-03-11 16:59:14,136 | INFO     | uvicorn.access:send:480 - 127.0.0.1:60234 - "GET /api/trades?page=1&limit=500 HTTP/1.1" 200
+2026-03-11 16:59:14,187 | INFO     | uvicorn.access:send:480 - 127.0.0.1:60237 - "GET /api/status HTTP/1.1" 200
+2026-03-11 16:59:14,215 | INFO     | uvicorn.access:send:480 - 127.0.0.1:60238 - "GET /api/trades?page=1&limit=500 HTTP/1.1" 200
+2026-03-11 16:59:14,250 | INFO     | uvicorn.access:send:480 - 127.0.0.1:60234 - "GET /api/status HTTP/1.1" 200
+2026-03-11 16:59:19,700 | INFO     | uvicorn.access:send:480 - 127.0.0.1:60239 - "OPTIONS /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 16:59:19,703 | INFO     | uvicorn.access:send:480 - 127.0.0.1:60239 - "OPTIONS /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 16:59:19,780 | INFO     | uvicorn.access:send:480 - 127.0.0.1:60239 - "GET /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 16:59:19,828 | INFO     | uvicorn.access:send:480 - 127.0.0.1:60239 - "GET /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 16:59:20,236 | INFO     | uvicorn.access:send:480 - 127.0.0.1:60239 - "GET /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 16:59:41,664 | INFO     | web.api:lifespan:64 - Initializing TradingBot... WITH_DEBUG_PRINTS_V2
+2026-03-11 16:59:47,462 | INFO     | web3.providers.WebSocketProvider:disconnect:267 - Message listener background task successfully shut down.
+2026-03-11 16:59:47,462 | INFO     | web3.providers.WebSocketProvider:disconnect:271 - Successfully disconnected from: wss://bsc-mainnet.nodereal.io/ws/v1/aeabb43a9a2d40deb0441e216d3962d6
+2026-03-11 16:59:51,319 | INFO     | uvicorn.error:startup:62 - Application startup complete.
+2026-03-11 16:59:51,319 | INFO     | uvicorn.error:startup:62 - Application startup complete.
+2026-03-11 16:59:51,534 | INFO     | uvicorn.access:send:480 - 127.0.0.1:60487 - "GET /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 16:59:51,556 | INFO     | uvicorn.access:send:480 - 127.0.0.1:60487 - "GET /api/status HTTP/1.1" 200
+2026-03-11 16:59:51,567 | INFO     | uvicorn.access:send:480 - 127.0.0.1:60487 - "GET /api/stats/daily?days=7 HTTP/1.1" 200
+2026-03-11 16:59:51,595 | INFO     | uvicorn.access:send:480 - 127.0.0.1:60487 - "GET /api/simulation/stats?days=7 HTTP/1.1" 200
+2026-03-11 16:59:51,778 | INFO     | uvicorn.access:send:480 - 127.0.0.1:60486 - "GET /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 16:59:51,783 | INFO     | uvicorn.access:send:480 - 127.0.0.1:60487 - "GET /api/status HTTP/1.1" 200
+2026-03-11 16:59:51,790 | INFO     | uvicorn.access:send:480 - 127.0.0.1:60462 - "GET /api/stats/daily?days=7 HTTP/1.1" 200
+2026-03-11 16:59:51,815 | INFO     | uvicorn.access:send:480 - 127.0.0.1:60485 - "GET /api/simulation/stats?days=7 HTTP/1.1" 200
+2026-03-11 16:59:51,846 | INFO     | uvicorn.access:send:480 - 127.0.0.1:60486 - "GET /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 16:59:53,531 | INFO     | uvicorn.access:send:480 - 127.0.0.1:60486 - "GET /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 16:59:53,587 | INFO     | uvicorn.access:send:480 - 127.0.0.1:60485 - "GET /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 16:59:54,017 | INFO     | uvicorn.access:send:480 - 127.0.0.1:60485 - "GET /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 16:59:54,982 | INFO     | uvicorn.access:send:480 - 127.0.0.1:60485 - "GET /api/positions HTTP/1.1" 200
+2026-03-11 16:59:54,984 | INFO     | uvicorn.access:send:480 - 127.0.0.1:60486 - "GET /api/positions HTTP/1.1" 200
+2026-03-11 16:59:55,284 | INFO     | uvicorn.error:asgi_send:270 - 127.0.0.1:60523 - "WebSocket /ws/prices?api_key=tugou_secret_key" [accepted]
+2026-03-11 16:59:55,284 | INFO     | uvicorn.error:asgi_send:270 - 127.0.0.1:60523 - "WebSocket /ws/prices?api_key=tugou_secret_key" [accepted]
+2026-03-11 16:59:55,285 | INFO     | uvicorn.error:handshake:643 - connection open
+2026-03-11 16:59:55,285 | INFO     | uvicorn.error:handshake:643 - connection open
+2026-03-11 16:59:55,938 | INFO     | uvicorn.error:handler:264 - connection closed
+2026-03-11 16:59:55,938 | INFO     | uvicorn.error:handler:264 - connection closed
+2026-03-11 16:59:55,995 | INFO     | uvicorn.access:send:480 - 127.0.0.1:60485 - "GET /api/trades?page=1&limit=500 HTTP/1.1" 200
+2026-03-11 16:59:56,000 | INFO     | uvicorn.access:send:480 - 127.0.0.1:60486 - "GET /api/status HTTP/1.1" 200
+2026-03-11 16:59:56,030 | INFO     | uvicorn.access:send:480 - 127.0.0.1:60462 - "GET /api/trades?page=1&limit=500 HTTP/1.1" 200
+2026-03-11 16:59:56,048 | INFO     | uvicorn.access:send:480 - 127.0.0.1:60485 - "GET /api/status HTTP/1.1" 200
+2026-03-11 16:59:59,196 | INFO     | uvicorn.access:send:480 - 127.0.0.1:60485 - "GET /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 17:00:05,957 | INFO     | uvicorn.access:send:480 - 127.0.0.1:60464 - "GET /api/status HTTP/1.1" 200
+2026-03-11 17:00:09,157 | INFO     | uvicorn.access:send:480 - 127.0.0.1:60464 - "GET /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 17:00:16,133 | INFO     | uvicorn.access:send:480 - 127.0.0.1:60492 - "GET /api/status HTTP/1.1" 200
+2026-03-11 17:00:19,175 | INFO     | uvicorn.access:send:480 - 127.0.0.1:60492 - "GET /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 17:00:26,451 | INFO     | uvicorn.access:send:480 - 127.0.0.1:60825 - "GET /api/status HTTP/1.1" 200
+2026-03-11 17:00:29,219 | INFO     | uvicorn.access:send:480 - 127.0.0.1:60825 - "GET /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 17:00:36,436 | INFO     | uvicorn.access:send:480 - 127.0.0.1:60933 - "GET /api/status HTTP/1.1" 200
+2026-03-11 17:00:39,148 | INFO     | uvicorn.access:send:480 - 127.0.0.1:60933 - "GET /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 17:00:46,135 | INFO     | uvicorn.access:send:480 - 127.0.0.1:60935 - "GET /api/status HTTP/1.1" 200
+2026-03-11 17:00:49,160 | INFO     | uvicorn.access:send:480 - 127.0.0.1:60935 - "GET /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 17:00:56,439 | INFO     | uvicorn.access:send:480 - 127.0.0.1:61144 - "GET /api/status HTTP/1.1" 200
+2026-03-11 17:00:59,160 | INFO     | uvicorn.access:send:480 - 127.0.0.1:61144 - "GET /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 17:01:06,139 | INFO     | uvicorn.access:send:480 - 127.0.0.1:61145 - "GET /api/status HTTP/1.1" 200
+2026-03-11 17:01:09,165 | INFO     | uvicorn.access:send:480 - 127.0.0.1:61145 - "GET /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 17:01:16,439 | INFO     | uvicorn.access:send:480 - 127.0.0.1:61317 - "GET /api/status HTTP/1.1" 200
+2026-03-11 17:01:19,179 | INFO     | uvicorn.access:send:480 - 127.0.0.1:61317 - "GET /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 17:01:26,133 | INFO     | uvicorn.access:send:480 - 127.0.0.1:61321 - "GET /api/status HTTP/1.1" 200
+2026-03-11 17:01:29,150 | INFO     | uvicorn.access:send:480 - 127.0.0.1:61321 - "GET /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 17:01:39,456 | INFO     | uvicorn.access:send:480 - 127.0.0.1:61516 - "GET /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 17:01:49,154 | INFO     | uvicorn.access:send:480 - 127.0.0.1:61517 - "GET /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 17:01:59,467 | INFO     | uvicorn.access:send:480 - 127.0.0.1:61687 - "GET /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 17:02:09,151 | INFO     | uvicorn.access:send:480 - 127.0.0.1:61689 - "GET /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 17:02:27,533 | INFO     | uvicorn.access:send:480 - 127.0.0.1:61941 - "GET /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 17:02:27,549 | INFO     | uvicorn.access:send:480 - 127.0.0.1:61940 - "GET /api/status HTTP/1.1" 200
+2026-03-11 17:02:29,164 | INFO     | uvicorn.access:send:480 - 127.0.0.1:61940 - "GET /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 17:02:39,162 | INFO     | uvicorn.access:send:480 - 127.0.0.1:61942 - "GET /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 17:02:49,479 | INFO     | uvicorn.access:send:480 - 127.0.0.1:62152 - "GET /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 17:02:59,156 | INFO     | uvicorn.access:send:480 - 127.0.0.1:62155 - "GET /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 17:03:09,460 | INFO     | uvicorn.access:send:480 - 127.0.0.1:62276 - "GET /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 17:03:19,148 | INFO     | uvicorn.access:send:480 - 127.0.0.1:62277 - "GET /api/status HTTP/1.1" 200
+2026-03-11 17:03:33,677 | INFO     | uvicorn.access:send:480 - 127.0.0.1:62407 - "GET /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 17:03:37,689 | INFO     | uvicorn.access:send:480 - 127.0.0.1:62407 - "GET /api/status HTTP/1.1" 200
+2026-03-11 17:03:39,193 | INFO     | uvicorn.access:send:480 - 127.0.0.1:62407 - "GET /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 17:03:46,434 | INFO     | uvicorn.access:send:480 - 127.0.0.1:62546 - "GET /api/status HTTP/1.1" 200
+2026-03-11 17:03:49,168 | INFO     | uvicorn.access:send:480 - 127.0.0.1:62546 - "GET /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 17:03:56,138 | INFO     | uvicorn.access:send:480 - 127.0.0.1:62550 - "GET /api/status HTTP/1.1" 200
+2026-03-11 17:03:59,154 | INFO     | uvicorn.access:send:480 - 127.0.0.1:62550 - "GET /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 17:04:06,429 | INFO     | uvicorn.access:send:480 - 127.0.0.1:62672 - "OPTIONS /api/status HTTP/1.1" 200
+2026-03-11 17:04:06,465 | INFO     | uvicorn.access:send:480 - 127.0.0.1:62672 - "GET /api/status HTTP/1.1" 200
+2026-03-11 17:04:09,178 | INFO     | uvicorn.access:send:480 - 127.0.0.1:62672 - "GET /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 17:04:16,134 | INFO     | uvicorn.access:send:480 - 127.0.0.1:62682 - "GET /api/status HTTP/1.1" 200
+2026-03-11 17:04:19,157 | INFO     | uvicorn.access:send:480 - 127.0.0.1:62682 - "GET /api/discoveries?page=1&limit=20 HTTP/1.1" 200
+2026-03-11 17:04:26,458 | INFO     | uvicorn.access:send:480 - 127.0.0.1:62843 - "GET /api/status HTTP/1.1" 200
+2026-03-11 17:04:29,196 | INFO     | uvicorn.access:send:480 - 127.0.0.1:62843 - "GET /api/discoveries?page=1&limit=20 HTTP/1.1" 200

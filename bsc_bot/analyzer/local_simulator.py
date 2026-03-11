@@ -112,24 +112,30 @@ class LocalSimulator:
         token = self.w3.eth.contract(address=token_address, abi=ERC20_ABI)
         try:
             expected_balance = await token.functions.balanceOf(pair_address).call()
-            # logger.info(f"Expected balance for pair: {expected_balance}")
             if expected_balance == 0:
                 return -1 # Empty pair, can't verify
-            
-            # Try slots 0 to 20 in PARALLEL
+
+            # Try slots 0 to 20 in PARALLEL, each with 200ms per-slot timeout
             async def check_slot(i):
                 try:
                     slot_key = self._get_storage_slot(i, pair_address)
-                    storage_val = await self.w3.eth.get_storage_at(token_address, slot_key)
+                    storage_val = await asyncio.wait_for(
+                        self.w3.eth.get_storage_at(token_address, slot_key),
+                        timeout=0.2
+                    )
                     if int.from_bytes(storage_val, byteorder='big') == expected_balance:
                         return i
-                except:
+                except (asyncio.TimeoutError, Exception):
                     pass
                 return None
 
             tasks = [check_slot(i) for i in range(21)]
-            results = await asyncio.gather(*tasks)
-            
+            try:
+                results = await asyncio.wait_for(asyncio.gather(*tasks), timeout=3.0)
+            except asyncio.TimeoutError:
+                logger.warning(f"find_balance_slot 整体超时(>3s): {token_address[:10]}")
+                return -1
+
             for r in results:
                 if r is not None:
                     logger.info(f"Found balance slot for {token_address}: {r}")
@@ -157,7 +163,7 @@ class LocalSimulator:
             logger.warning(f"Failed to build allowance tx: {e}")
             return -1
 
-        # Try slots 0 to 20 in PARALLEL
+        # Try slots 0 to 20 in PARALLEL, each with 200ms per-slot timeout
         async def check_slot(i):
             try:
                 slot_key = self._get_nested_storage_slot(i, owner, spender)
@@ -168,31 +174,33 @@ class LocalSimulator:
                         }
                     }
                 }
-                
-                result = await self.w3.eth.call(
-                    {
-                        "to": token_address,
-                        "data": data
-                    },
-                    "latest",
-                    state_override
+                result = await asyncio.wait_for(
+                    self.w3.eth.call(
+                        {"to": token_address, "data": data},
+                        "latest",
+                        state_override
+                    ),
+                    timeout=0.2
                 )
-                
                 val = int.from_bytes(result, byteorder='big')
                 if val > 0:
                     return i
-            except:
+            except (asyncio.TimeoutError, Exception):
                 pass
             return None
 
         tasks = [check_slot(i) for i in range(21)]
-        results = await asyncio.gather(*tasks)
-        
+        try:
+            results = await asyncio.wait_for(asyncio.gather(*tasks), timeout=3.0)
+        except asyncio.TimeoutError:
+            logger.warning(f"find_allowance_slot 整体超时(>3s): {token_address[:10]}")
+            return -1
+
         for r in results:
             if r is not None:
                 logger.info(f"Found allowance slot for {token_address}: {r}")
                 return r
-                
+
         return -1
 
     async def simulate_trade(self, token_address: str, pair_address: str, amount_bnb: float = 0.1):
