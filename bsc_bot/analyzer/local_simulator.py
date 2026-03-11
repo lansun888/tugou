@@ -385,11 +385,12 @@ class LocalSimulator:
         try:
             token_address = to_checksum_address(token_address)
 
-            # 查找 balance 和 allowance slot
-            # 如果没有 pair_address，使用 WBNB 作为参考（可能不准确）
+            # 查找 balance 和 allowance slot（并行，从串行最差6s降到最差3s）
             ref_address = pair_address if pair_address else WBNB_ADDRESS
-            balance_slot = await self.find_balance_slot(token_address, ref_address)
-            allowance_slot = await self.find_allowance_slot(token_address)
+            balance_slot, allowance_slot = await asyncio.gather(
+                self.find_balance_slot(token_address, ref_address),
+                self.find_allowance_slot(token_address),
+            )
 
             if balance_slot == -1 or allowance_slot == -1:
                 return {

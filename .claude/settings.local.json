@@ -44,7 +44,8 @@
       "Read(//c/Users/admin/**)",
       "Bash($PYTHON:*)",
       "Bash(echo:*)",
-      "Bash(__NEW_LINE_3410dc97c7cd9856__ for:*)"
+      "Bash(__NEW_LINE_3410dc97c7cd9856__ for:*)",
+      "Bash(\"d:/workSpace/tugou/bsc_bot/venv/Scripts/python.exe\" -c \"import sqlite3; print\\(''ok''\\)\")"
     ]
   }
 }

@@ -291,33 +291,40 @@ class TradingBot:
                 self._graduation_watched[token_address] = asyncio.get_event_loop().time()
                 logger.debug(f"[near_grad] 加入监控: {token_address[:10]}")
 
-            # ── 阶段1：初始状态获取 (four_meme 跳过，bonding curve 无 pair 地址) ──
+            # ── 阶段1+2：初始状态获取 + 观察等待（并行执行，节省最多 quick_observe_time 秒）──
+            # 提前计算观察时间（不依赖 Step1 结果，可在 Step1 之前算出）
+            skip_observation = is_four_meme and four_meme_cfg.get("skip_observation", True)
+            quick_observe_time = 0 if skip_observation else self.config.get("monitor", {}).get("quick_observe_time", 1)
+
             t1 = time.perf_counter()
             if is_four_meme:
                 initial_state = {}
                 logger.info(f"⏱️ 1.初始状态获取: 跳过(four_meme)")
-                dur1 = 0
+                logger.info(f"⏱️ 2.快速观察等待: 跳过(four_meme)")
             else:
-                try:
-                    initial_state = await asyncio.wait_for(
-                        self.security_checker.get_token_state(token_address, pair_address),
-                        timeout=3.0
-                    )
-                except asyncio.TimeoutError:
-                    logger.warning(f"⏱️ 1.初始状态获取超时(>3s)，跳过")
-                    initial_state = {}
-                dur1 = _ms(t1)
-                logger.info(f"⏱️ 1.初始状态获取: {dur1:.0f}ms")
+                async def _get_initial_state():
+                    try:
+                        return await asyncio.wait_for(
+                            self.security_checker.get_token_state(token_address, pair_address),
+                            timeout=3.0
+                        )
+                    except asyncio.TimeoutError:
+                        logger.warning(f"⏱️ 1.初始状态获取超时(>3s)，跳过")
+                        return {}
 
-            # ── 阶段2：快速观察等待 (four_meme 时间窗口极短，直接跳过) ──
-            t2 = time.perf_counter()
-            skip_observation = is_four_meme and four_meme_cfg.get("skip_observation", True)
-            quick_observe_time = 0 if skip_observation else self.config.get("monitor", {}).get("quick_observe_time", 5)
-            if quick_observe_time > 0:
-                logger.info(f"⏱️ 2.快速观察等待: {quick_observe_time * 1000:.0f}ms")
-                await asyncio.sleep(quick_observe_time)
-            else:
-                logger.info(f"⏱️ 2.快速观察等待: 跳过({'four_meme' if skip_observation else 'quick_observe_time=0'})")
+                if quick_observe_time > 0:
+                    # Step1 和 Step2 同时启动，总耗时 = max(get_token_state, sleep)
+                    logger.info(f"⏱️ 1+2.初始状态获取+观察等待 并行启动 (观察={quick_observe_time*1000:.0f}ms)")
+                    initial_state, _ = await asyncio.gather(
+                        _get_initial_state(),
+                        asyncio.sleep(quick_observe_time)
+                    )
+                else:
+                    logger.info(f"⏱️ 2.快速观察等待: 跳过(quick_observe_time=0)")
+                    initial_state = await _get_initial_state()
+
+                dur12 = _ms(t1)
+                logger.info(f"⏱️ 1+2.合计: {dur12:.0f}ms (初始状态+观察并行)")
 
             # ── 阶段3+4：安全分析 + 预构建交易（并行）──
             t3 = time.perf_counter()

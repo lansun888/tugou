@@ -1765,6 +1765,7 @@ class SecurityChecker:
         # 任意一个触发硬拒绝条件，立即取消尚未完成的慢速任务，不等 local_simulator 跑完。
         reject_event = asyncio.Event()
         result_container: Dict[str, Any] = {}
+        _cancelled_tasks: set = set()  # 被快速拒绝机制主动取消的任务，不视为真实失败
 
         def _is_hard_reject(name: str, res: Any) -> bool:
             """返回 True 表示已确认应拒绝，可提前取消其余任务"""
@@ -1788,6 +1789,7 @@ class SecurityChecker:
 
         async def _run_task(name: str, coro):
             if reject_event.is_set():
+                _cancelled_tasks.add(name)  # 硬拒绝已触发，跳过不运行
                 return
             try:
                 res = await coro
@@ -1796,6 +1798,7 @@ class SecurityChecker:
                     reject_event.set()
                     logger.info(f"[FAST REJECT] {name} 触发硬拒绝，取消其他任务")
             except asyncio.CancelledError:
+                _cancelled_tasks.add(name)  # 被取消 ≠ API失败，不扣分
                 result_container.setdefault(name, None)
                 raise
             except Exception as e:
@@ -1833,7 +1836,7 @@ class SecurityChecker:
             asyncio.create_task(_run_task("price_sanity",
                 _timed(self.check_price_sanity(token_address, pair_address), "price_sanity"))),
             asyncio.create_task(_run_task("sell_feasibility",
-                _timed(asyncio.wait_for(self.check_sell_feasibility(token_address, pair_address), timeout=5.0), "sell_feasibility"))),
+                _timed(asyncio.wait_for(self.check_sell_feasibility(token_address, pair_address), timeout=3.0), "sell_feasibility"))),
         ]
 
         async def _cancel_on_reject():
@@ -1965,6 +1968,8 @@ class SecurityChecker:
         }
         
         for check_name in REQUIRED_CHECKS:
+            if check_name in _cancelled_tasks:
+                continue  # 被快速拒绝机制取消，不是真实失败，跳过
             if not check_results_map.get(check_name):
                 logger.error(f"Critical Security Check Failed: {check_name} (API Error or Empty Result)")
                 score = 0
