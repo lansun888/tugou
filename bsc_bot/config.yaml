@@ -15,7 +15,7 @@ monitor:
   min_liquidity_bnb: 10
   min_security_score: 85
   observation_wait_time: 30
-  quick_observe_time: 5
+  quick_observe_time: 1       # 观察等待(秒)，设为0直接跳过。降低此值可更早买入，但减少价格/流动性观察窗口
 network:
   chain_id: 56
   direct_connect:

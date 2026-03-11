@@ -348,7 +348,16 @@ class TradingBot:
             pre_build_task = asyncio.create_task(run_pre_build())
 
             analysis_result = await security_task
-            pre_built_data = await pre_build_task
+
+            # 快速路径：安全分析拒绝时立即取消预构建，不再等待其 ~2s 完成
+            _chk_min = four_meme_cfg.get("min_score", 75) if is_four_meme else self.config.get("monitor", {}).get("min_security_score", 80)
+            if analysis_result.get("final_score", 0) < _chk_min or analysis_result.get("decision") == "reject":
+                pre_build_task.cancel()
+                pre_built_data = None
+                logger.info(f"⏱️ 4.预构建交易: 已取消(安全分析已拒绝，score={analysis_result.get('final_score')})")
+            else:
+                pre_built_data = await pre_build_task
+
             dur34 = _ms(t3)   # ★ 立即捕获
             logger.info(f"⏱️ 3+4.并行(安全分析+预构建)合计: {dur34:.0f}ms")
             

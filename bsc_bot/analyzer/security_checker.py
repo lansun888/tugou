@@ -44,6 +44,8 @@ class SmartCache:
 
 # 模块级单例，跨同一进程所有 SecurityChecker 实例共享
 _cache = SmartCache()
+# GoPlus in-flight 去重：同一代币并发调用只发一次 HTTP 请求，后到的等待前者结果
+_goplus_inflight: Dict[str, "asyncio.Future"] = {}
 
 # 常量定义
 CHAIN_ID = 56
@@ -149,35 +151,46 @@ class SecurityChecker:
         return result
 
     async def check_goplus(self, token_address: str) -> Dict[str, Any]:
-        """GoPlus Security API 检测"""
+        """GoPlus Security API 检测（含 in-flight 去重，并发调用只发一次请求）"""
         cache_key = f"goplus:{token_address.lower()}"
         cached = _cache.get(cache_key, max_age_seconds=300)  # 5 min
         if cached is not None:
             logger.debug(f"[cache] goplus hit: {token_address[:10]}…")
             return cached
 
+        # In-flight 去重：如果已有并发请求在飞，等待它的结果而不重复发请求
+        if cache_key in _goplus_inflight:
+            logger.debug(f"[goplus] dedup: 等待 in-flight 请求: {token_address[:10]}")
+            try:
+                return await asyncio.shield(_goplus_inflight[cache_key])
+            except Exception:
+                return {}
+
+        loop = asyncio.get_event_loop()
+        fut: asyncio.Future = loop.create_future()
+        _goplus_inflight[cache_key] = fut
+
+        result = {}
         try:
             session = await self._get_session()
             params = {"contract_addresses": token_address}
-            # Short timeout for GoPlus
             async with session.get(GOPLUS_API_URL, params=params, timeout=5) as resp:
                 if resp.status == 200:
                     data = await resp.json()
-                    # Ensure we extract data for THIS token address only
                     result = data.get("result", {}).get(token_address.lower(), {})
-
-                    # Log raw data for verification
                     logger.info(f"GoPlus Raw Data for {token_address}: {json.dumps(result)}")
-
                     if not result:
-                         # Try original case if lower failed (API quirk?)
-                         result = data.get("result", {}).get(token_address, {})
+                        result = data.get("result", {}).get(token_address, {})
                     if result:
                         _cache.set(cache_key, result)
-                    return result
         except Exception as e:
             logger.warning(f"GoPlus API 检测失败: {e}")
-        return {}
+        finally:
+            if not fut.done():
+                fut.set_result(result)
+            _goplus_inflight.pop(cache_key, None)
+
+        return result
 
     async def check_honeypot_is(self, token_address: str) -> Dict[str, Any]:
         """Honeypot.is API 检测"""
