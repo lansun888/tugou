@@ -385,32 +385,46 @@ class PositionManager:
                     logger.info(f"监听就绪: {token_address[:8]} (SubID: {subscription_id})")
                     
                     # 监听循环
+                    sub_queue = w3_ws.provider._request_processor._subscription_response_queue
                     async for response in w3_ws.socket.process_subscriptions():
                         try:
+                            # 队列积压超过20条时跳过，防止雪崩式RPC冲击
+                            pending = sub_queue.qsize()
+                            if pending > 20:
+                                if pending % 50 == 0:  # 每50条打一次日志避免刷屏
+                                    logger.warning(f"⚡ [{token_address[:8]}] 事件队列积压 {pending} 条，跳过处理")
+                                continue
+
                             start_time = time.time()
-                            # Swap发生了，立即重新计算价格
-                            # Pass cache_only=False to force re-fetch reserves
-                            new_price_info, err = await self._get_price_onchain(token_address, pair_address)
-                            
+                            # Swap发生了，立即重新计算价格（加5s超时防止RPC卡死）
+                            try:
+                                new_price_info, _ = await asyncio.wait_for(
+                                    self._get_price_onchain(token_address, pair_address),
+                                    timeout=5.0
+                                )
+                            except asyncio.TimeoutError:
+                                logger.warning(f"⚡ [{token_address[:8]}] _get_price_onchain 超时(>5s)，跳过本次Swap事件")
+                                continue
+
                             if new_price_info:
                                 new_price = new_price_info.get('price_bnb', 0.0)
                                 liquidity = new_price_info.get('liquidity_bnb', 0.0)
-                                
+
                                 if new_price > 0:
                                     pos = self.positions.get(token_address)
                                     # Double check status
                                     if not pos or pos.status not in ['active', 'partially_sold']:
                                         return # Stop loop
-                                        
+
                                     # Update & Check Strategies IMMEDIATELY
                                     await self._update_position_price(pos, new_price, 'swap_event', liquidity)
                                     await self._check_strategies(pos, new_price, liquidity)
-                                    
+
                                     # 记录耗时 (超过200ms才打印，避免刷屏)
                                     elapsed = (time.time() - start_time) * 1000
                                     if elapsed > 200:
                                         logger.debug(f"⚡ [Event] {pos.token_name} 价格更新完成 | 耗时: {elapsed:.2f}ms | 来源: Swap事件")
-                                    
+
                         except Exception as inner_e:
                             logger.error(f"处理Swap事件异常: {inner_e}")
                             
