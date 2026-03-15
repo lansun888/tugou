@@ -5,9 +5,11 @@ from .http_client import fetch_with_proxy
 
 DEXSCREENER_API = "https://api.dexscreener.com"
 
-# ── 熔断器：连续失败 3 次后暂停 60 秒，避免代理挂掉时无效刷请求 ──
+# ── 熔断器：连续失败 3 次后暂停 30 秒，避免代理挂掉时无效刷请求 ──
+# TCP RST（连接被远端强制断开）和超时都会触发失败计数
+# 冷却时间缩短为 30s（原60s），代理恢复后尽快恢复服务
 _CB_THRESHOLD = 3       # 连续失败几次触发熔断
-_CB_COOLDOWN  = 60.0    # 熔断冷却时间（秒）
+_CB_COOLDOWN  = 30.0    # 熔断冷却时间（秒），缩短以加快恢复
 _cb_fail_count: int   = 0
 _cb_open_until: float = 0.0
 

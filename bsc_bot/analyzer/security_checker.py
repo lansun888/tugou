@@ -318,7 +318,7 @@ class SecurityChecker:
         try:
             session = await self._get_session()
             url = f"{DEXSCREENER_PAIRS_URL}/{token_address}"
-            async with session.get(url, timeout=3) as resp:
+            async with session.get(url, timeout=5) as resp:
                 if resp.status == 200:
                     data = await resp.json()
                     pair_list = data if isinstance(data, list) else data.get("pairs", [])
@@ -356,7 +356,7 @@ class SecurityChecker:
                         result["reason"] = f"6小时内价格崩溃超90% (6h: {result['price_change_6h']:.1f}%)"
                     _cache.set(cache_key, result)
         except asyncio.TimeoutError:
-            logger.warning(f"check_price_behavior 超时(>3s)，跳过: {token_address[:10]}")
+            logger.warning(f"check_price_behavior 超时(>5s)，跳过: {token_address[:10]}")
         except Exception as e:
             logger.warning(f"check_price_behavior 失败: {e}")
         return result
@@ -1362,7 +1362,7 @@ class SecurityChecker:
                 asyncio.wait_for(self.check_goplus(token_address),          timeout=3.0),
                 asyncio.wait_for(self.check_gmgn(token_address),            timeout=3.0),
                 asyncio.wait_for(self.check_gmgn_token_stat(token_address), timeout=3.0),
-                asyncio.wait_for(self.check_price_behavior(token_address),  timeout=3.0),
+                asyncio.wait_for(self.check_price_behavior(token_address),  timeout=5.0),
                 asyncio.wait_for(self.check_holder_structure(token_address), timeout=3.0),
                 return_exceptions=True,
             )
@@ -1564,18 +1564,31 @@ class SecurityChecker:
                 result["risk_items"] = risk_items; result["analysis_time"] = time.time() - start_time
                 return result
 
-            # 2.5 DEV开盘清仓时间窗口扩大（新增）
-            if _dev < 0.001 and _age is not None and 0 < _age < 30:
-                _snap = {"dev_holding_pct": round(_dev, 6), "token_age_min": round(_age, 1)}
-                self._log_rejection(token_address, f"开盘{_age:.0f}分钟内DEV已清仓", _snap)
-                score = 0
-                risk_items.append({"desc": f"开盘30分钟内DEV已清仓（{_age:.0f}分钟）", "score": -100})
-                result["final_score"] = 0; result["decision"] = "reject"
-                result["risk_items"] = risk_items; result["analysis_time"] = time.time() - start_time
-                return result
-            elif _dev < 0.001 and _age is not None and 0 < _age < 60:
-                score -= 20
-                risk_items.append({"desc": f"开盘60分钟内DEV已清仓（{_age:.0f}分钟）", "score": -20})
+            # 2.5 DEV清仓检测（age已知/未知均处理）
+            if _dev < 0.001:
+                if _age is not None and 0 < _age < 30:
+                    # 30分钟内已清仓 → 硬拒绝
+                    _snap = {"dev_holding_pct": round(_dev, 6), "token_age_min": round(_age, 1)}
+                    self._log_rejection(token_address, f"开盘{_age:.0f}分钟内DEV已清仓", _snap)
+                    score = 0
+                    risk_items.append({"desc": f"开盘30分钟内DEV已清仓（{_age:.0f}分钟）", "score": -100})
+                    result["final_score"] = 0; result["decision"] = "reject"
+                    result["risk_items"] = risk_items; result["analysis_time"] = time.time() - start_time
+                    return result
+                elif _age is not None and 0 < _age < 60:
+                    # 60分钟内已清仓 → 扣分
+                    score -= 20
+                    risk_items.append({"desc": f"开盘60分钟内DEV已清仓（{_age:.0f}分钟）", "score": -20})
+                else:
+                    # age未知（DexScreener超时/新币未索引）+ DEV已清仓 → 无法确认安全，硬拒绝
+                    # 极新代币（<2分钟）DEV持仓<0.001%是Rug最强信号之一
+                    _snap = {"dev_holding_pct": round(_dev, 6), "token_age_min": None, "price_beh_available": bool(price_beh_res)}
+                    self._log_rejection(token_address, "DEV持仓为0且无法确认代币年龄（DexScreener无数据）", _snap)
+                    score = 0
+                    risk_items.append({"desc": "DEV持仓<0.001%且代币年龄未知（DS无数据），拒绝买入", "score": -100})
+                    result["final_score"] = 0; result["decision"] = "reject"
+                    result["risk_items"] = risk_items; result["analysis_time"] = time.time() - start_time
+                    return result
 
         # ── 2f. 价格行为过滤 ──
         if price_beh_res and price_beh_res.get("reject"):
@@ -2033,10 +2046,16 @@ class SecurityChecker:
                 logger.warning(f"creator_percent={creator_pct:.2f} 硬拒绝: {token_address[:10]}")
                 return self._finalize_result(result, score, risk_items, bonus_items, start_time)
 
-            # 唯一持仓是LP合约(100%) → 代币无法被真实钱包持有，硬拒绝
+            # 持仓数量异常检测（硬拒绝）
             holder_count = int(goplus_data.get("holder_count", 99) or 99)
             holders = goplus_data.get("holders", [])
-            if holder_count <= 2 and holders:
+            # holder_count=0：GoPlus已索引但完全没有持仓记录，极度可疑（新rug合约）
+            if holder_count == 0:
+                score -= 25
+                risk_items.append({"desc": "GoPlus: 持有人数为0，代币无任何持仓记录（极度可疑）", "score": -25})
+                logger.warning(f"GoPlus holder_count=0，扣25分: {token_address[:10]}")
+            # 唯一持仓是LP合约(100%) → 代币无法被真实钱包持有，硬拒绝
+            elif holder_count <= 2 and holders:
                 non_lp_real_holders = [
                     h for h in holders
                     if h.get("is_contract") == 0
@@ -2352,16 +2371,26 @@ class SecurityChecker:
                 risk_items.append({"desc": f"持有者不足50人 ({_hcnt})", "score": -100})
                 return self._finalize_result(result, score, risk_items, bonus_items, start_time)
 
-            # 2.5 DEV开盘清仓时间窗口扩大（新增）
-            if _dev < 0.001 and _age_min is not None and 0 < _age_min < 30:
-                _snap = {"dev_holding_pct": round(_dev, 6), "token_age_min": round(_age_min, 1)}
-                self._log_rejection(token_address, f"开盘{_age_min:.0f}分钟内DEV已清仓", _snap)
-                score = 0
-                risk_items.append({"desc": f"开盘30分钟内DEV已清仓（{_age_min:.0f}分钟）", "score": -100})
-                return self._finalize_result(result, score, risk_items, bonus_items, start_time)
-            elif _dev < 0.001 and _age_min is not None and 0 < _age_min < 60:
-                score -= 20
-                risk_items.append({"desc": f"开盘60分钟内DEV已清仓（{_age_min:.0f}分钟）", "score": -20})
+            # 2.5 DEV清仓检测（age已知/未知均处理）
+            if _dev < 0.001:
+                if _age_min is not None and 0 < _age_min < 30:
+                    # 30分钟内已清仓 → 硬拒绝
+                    _snap = {"dev_holding_pct": round(_dev, 6), "token_age_min": round(_age_min, 1)}
+                    self._log_rejection(token_address, f"开盘{_age_min:.0f}分钟内DEV已清仓", _snap)
+                    score = 0
+                    risk_items.append({"desc": f"开盘30分钟内DEV已清仓（{_age_min:.0f}分钟）", "score": -100})
+                    return self._finalize_result(result, score, risk_items, bonus_items, start_time)
+                elif _age_min is not None and 0 < _age_min < 60:
+                    # 60分钟内已清仓 → 扣分
+                    score -= 20
+                    risk_items.append({"desc": f"开盘60分钟内DEV已清��（{_age_min:.0f}分钟）", "score": -20})
+                else:
+                    # age未知（DexScreener连接失败/新币未索引）+ DEV已清仓 → 硬拒绝
+                    _snap = {"dev_holding_pct": round(_dev, 6), "token_age_min": None, "price_beh_available": bool(price_beh_data)}
+                    self._log_rejection(token_address, "DEV持仓为0且无法确认代币年龄（DexScreener无数据）", _snap)
+                    score = 0
+                    risk_items.append({"desc": "DEV持仓<0.001%且代币年龄未知（DS无数据），拒绝买入", "score": -100})
+                    return self._finalize_result(result, score, risk_items, bonus_items, start_time)
 
         # 优化4：LP锁仓检测
         if goplus_data:
